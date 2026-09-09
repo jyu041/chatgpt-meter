@@ -1,77 +1,76 @@
 # ChatGPT Meter
 
-Private Firefox/Chromium browser-extension project for estimating how large the current ChatGPT conversation has become and warning before a handoff is prudent.
+Private Firefox/Chromium extension for estimating the size of the current ChatGPT conversation and warning before a handoff is prudent.
 
-## Goal
+## What it measures
 
-Provide a small always-visible meter for long ChatGPT conversations without pretending that historical conversation size equals the model's live context window.
+Keep these separate:
 
-The project keeps three concepts separate:
+1. **History size** — estimated text tokens represented by the active conversation branch.
+2. **Structural pressure** — experimental node/message/hidden/compaction signals that may correlate with conversation lifespan.
+3. **Confirmed limit** — only when ChatGPT itself displays a maximum-conversation-length error.
 
-1. **History size** — estimated tokens/content on the active conversation branch.
-2. **Structural pressure** — message/node/hidden/compaction signals that may correlate with ChatGPT's practical conversation lifespan.
-3. **Confirmed limit** — only when ChatGPT itself reports that the maximum conversation length was reached.
+The extension does **not** claim access to OpenAI's internal context counter. A historical branch size is not the same as the model's live prompt/context usage.
 
-Percentages must always name their denominator. Unknown limits stay unknown.
+## Current baseline
 
-## Architecture
+The skeleton now includes:
 
-```text
-ChatGPT page
-  -> MAIN-world fetch observer
-  -> parse /backend-api/conversation/{id}
-  -> aggregate active-branch metrics in-page
-  -> JSON-only aggregate CustomEvent
-  -> isolated extension content script
-  -> small UI / future warnings
-```
+- Firefox/Chromium Manifest V3 via WXT.
+- MAIN-world observation of ChatGPT conversation-detail responses.
+- Active-branch reconstruction using `mapping` + `current_node`.
+- Aggregate-only cross-world events; raw conversation text stays in MAIN world.
+- Best-effort refresh after a streamed conversation POST completes.
+- Conversation-ID filtering across ChatGPT SPA navigation.
+- A deliberately small in-page badge: `History ~82k · Pressure 734`.
+- Detection of visible maximum-length errors as a separate confirmed state.
+- Pure analyzer tests with synthetic conversation graphs.
 
-Raw conversation text must not cross the MAIN-world/extension bridge or leave the browser.
-
-## Current status
-
-Initial research + skeleton only. The skeleton is intentionally small; it proves the data path and displays a minimal badge. The real meter UI, settings, calibration, tests and handoff workflow are implementation work for OpenCode.
-
-See:
-
-- [`docs/AUDIT.md`](docs/AUDIT.md) — upstream audit and constraints.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — data model and design rules.
-- [`docs/OPENCODE.md`](docs/OPENCODE.md) — implementation handoff.
+No percentage is shown until a defensible denominator/calibration exists.
 
 ## Development
 
-Requires Node 20+.
+Requires Node 20+ and Firefox 128+ for the Firefox MV3 MAIN-world path.
 
 ```bash
 npm install
 npm run dev:firefox
 ```
 
-Chrome/Chromium:
+Chromium:
 
 ```bash
 npm run dev:chrome
 ```
 
-Production builds:
+Checks/builds:
 
 ```bash
+npm run test
+npm run typecheck
 npm run build:firefox
 npm run build:chrome
 ```
 
-## Non-goals
+`npm install` generates `package-lock.json`; commit it once dependencies are installed locally.
 
-- Claiming access to OpenAI's authoritative context usage counter.
-- Treating an API model's advertised context window as ChatGPT's conversation hard limit.
-- DOM-only counting as the primary measurement method.
-- Sending conversation content to any server.
+## Privacy rules
 
-## Research basis
+- Host scope: `https://chatgpt.com/*` only.
+- No telemetry, analytics, remote storage or cloud processing.
+- Never persist raw prompts, replies, tool output or access tokens.
+- Raw conversation content must not cross the MAIN-world/extension bridge.
+- Clone observed responses; never mutate ChatGPT traffic.
+- Fail open: extension failure must not interfere with ChatGPT.
 
-Primary references:
+## Docs
 
-- `joostmbakker/context-window-meter` — MIT; active-branch conversation-graph interception.
-- `SpendinFR/UsageChatgpt` — useful structural/limit research, but no license was present during the audit; research only, no code copying.
-- `ZM-BAD/headroom` — Apache-2.0; useful cross-browser/WXT reference.
-- Mozilla + WXT documentation for MAIN-world and cross-browser script injection.
+- [`docs/AUDIT.md`](docs/AUDIT.md) — upstream research and constraints.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — data path and invariants.
+- [`docs/OPENCODE.md`](docs/OPENCODE.md) — concise implementation handoff.
+
+## Reference projects
+
+- `joostmbakker/context-window-meter` — MIT; primary reference for active-branch conversation-graph observation.
+- `SpendinFR/UsageChatgpt` — useful structural/limit research; no root license found during the audit, so concepts only and no code copying.
+- `ZM-BAD/headroom` — Apache-2.0; useful WXT/cross-browser engineering reference.

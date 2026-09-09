@@ -7,14 +7,18 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev:firefox": "wxt -b firefox",
-    "dev:chrome": "wxt",
-    "build:firefox": "wxt build -b firefox",
-    "build:chrome": "wxt build",
-    "typecheck": "tsc --noEmit"
+    "postinstall": "wxt prepare",
+    "dev:firefox": "wxt -b firefox --mv3",
+    "dev:chrome": "wxt -b chrome --mv3",
+    "build:firefox": "wxt build -b firefox --mv3",
+    "build:chrome": "wxt build -b chrome --mv3",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test && npm run build:firefox"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
-    "wxt": "^0.20.0"
+    "vitest": "^3.2.4",
+    "wxt": "^0.21.4"
   }
 }

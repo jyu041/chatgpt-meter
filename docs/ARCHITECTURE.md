@@ -1,54 +1,79 @@
 # Architecture
 
-## Design principle
+## Principle
 
-The extension measures **observable conversation history** and separately estimates **conversation pressure**. It must not imply that either value is OpenAI's internal context counter.
+ChatGPT Meter measures **observable historical conversation structure**. It must not imply access to OpenAI's internal live-context counter.
+
+Keep separate:
+
+- `historicalTokensEstimate` — approximate text-token size of the active historical branch.
+- `structuralPressureRaw` — experimental structural signal; no percentage without calibration.
+- `compactionSignals` — explicit candidate metadata/types only; not proof of internal compaction.
+- `limitConfirmed` — UI state only when ChatGPT visibly reports a maximum conversation length.
+
+## Data path
+
+```text
+ChatGPT MAIN world
+  window.fetch
+      │
+      ├─ observe GET /backend-api/.../conversation/{id}
+      │      └─ clone JSON response
+      │
+      ├─ analyze active branch locally
+      │      └─ raw text exists only during analysis
+      │
+      └─ CustomEvent(JSON aggregate metrics only)
+                    │
+                    ▼
+isolated content script
+  validate schema + route conversation ID
+  render small badge
+  detect visible confirmed-limit message
+```
+
+### Live refresh
+
+The baseline remembers a clone of the last successful conversation-detail request. After a cloned conversation POST response finishes streaming, it performs a best-effort same-origin refresh using that request and re-analyzes the resulting full graph.
+
+This is deliberately provisional. OpenCode must validate it against current ChatGPT and Project conversations. If the endpoint/request contract changes, prefer another same-origin aggregate-safe strategy; do not introduce access-token persistence merely for convenience.
 
 ## Components
 
 ### `entrypoints/main-world.content.ts`
 
-Runs in the page MAIN world at `document_start`.
-
-Responsibilities:
-
-- Wrap `window.fetch` without changing request/response behavior.
-- Observe successful conversation-detail responses.
-- Clone and parse matching JSON.
-- Find `mapping` and `current_node`.
-- Walk only the active parent chain.
-- Produce aggregate metrics.
-- Dispatch aggregate JSON via a namespaced `CustomEvent`.
-
-It must never dispatch raw message text.
+- Runs at `document_start`, `world: MAIN`.
+- Wraps `window.fetch` once.
+- Never mutates requests/responses.
+- Recognizes conversation-detail GETs and conversation POSTs.
+- Clones only responses required for lifecycle detection/analysis.
+- Calls the pure analyzer in MAIN world.
+- Emits aggregate JSON only.
+- Fails open on all errors.
 
 ### `entrypoints/content.ts`
 
-Runs in the normal isolated extension world.
-
-Responsibilities:
-
-- Listen for aggregate events from the MAIN-world observer.
-- Validate the event payload.
-- Maintain the small in-page meter.
-- Detect the visible ChatGPT maximum-length error as a separate confirmed state.
-- Eventually store user settings/calibration locally.
+- Runs in the isolated extension world.
+- Validates aggregate event payloads.
+- Rejects metrics for a different `/c/{conversationId}` route.
+- Resets on SPA navigation.
+- Displays a minimal persistent badge.
+- Detects visible maximum-length wording separately.
+- Does not scrape conversation messages for measurement.
 
 ### `lib/analyze.ts`
 
-Pure functions only. No DOM, browser or network calls.
+Pure TypeScript. No DOM/network/browser APIs.
 
-Responsibilities:
-
-- Validate conversation shape.
-- Reconstruct active branch.
+- Validate `mapping` + `current_node`.
+- Walk parent links only; reject cycles/broken parent chains.
 - Classify message roles/content types.
-- Estimate token counts.
-- Produce structural metrics.
+- Extract textual scalar content generically while ignoring pointer/ID fields.
+- Estimate text tokens with a deliberately rough, independently specified heuristic.
+- Count explicit candidate compaction signals conservatively.
+- Produce aggregate metrics.
 
-Keep this independently unit-testable.
-
-## Initial data contract
+## Metrics contract
 
 ```ts
 interface ConversationMetrics {
@@ -57,78 +82,47 @@ interface ConversationMetrics {
   modelSlug: string | null;
   activeBranchNodes: number;
   activeBranchMessages: number;
+  historicalCharacters: number;
   historicalTokensEstimate: number;
-  roleTokens: {
-    user: number;
-    assistant: number;
-    tool: number;
-    system: number;
-    reasoning: number;
-    other: number;
-  };
-  roleMessages: Record<string, number>;
+  roleTokens: Record<Role, number>;
+  roleMessages: Record<Role, number>;
   hiddenMessages: number;
-  compactionMarkers: number;
-  structuralCharge: number;
+  compactionSignals: number;
+  structuralPressureRaw: number;
   measuredAt: string;
 }
 ```
 
-`structuralCharge` may initially use an independently implemented analogue of the researched `assistant + tool - hidden - system` formula. It is an experimental raw value, **not a percentage** until we have defensible calibration.
-
-## UI target
-
-Keep the persistent badge small:
+The persistent UI intentionally starts as:
 
 ```text
-History ~82k   |   Pressure: low
+History ~82k · Pressure 734
 ```
 
-Expanded view later:
+No model-context percentage and no conversation-lifespan percentage should appear until their denominator is empirically defensible.
 
-```text
-Historical branch        ~82,400 tokens
-User                       18,200
-Assistant                  41,600
-Tools                      19,300
-Reasoning                   2,100
-System/other                1,200
+## Privacy/security invariants
 
-Structural pressure       734 raw
-Compaction signals          12
-Confirmed hard limit        no
+1. ChatGPT host scope only.
+2. No telemetry or remote services.
+3. Never persist raw conversation content.
+4. Never send raw conversation content across the MAIN/isolated-world bridge.
+5. Never persist ChatGPT access/session tokens.
+6. Never mutate ChatGPT network traffic.
+7. A meter failure must not break ChatGPT.
+8. DOM inspection is allowed for UI state/error detection, not primary message counting.
 
-[Prepare handoff]
-```
+## Handoff workflow — later phase
 
-If a model context denominator becomes reliable, add a **separate** model-context estimate. Never reuse a conversation-lifespan threshold as a model-context threshold.
+Add a user-triggered `Prepare handoff` control that fills, but **does not submit**, a prompt requesting concise `PROJECT_STATE.md` and `SESSION_HANDOFF.md` files.
 
-## Handoff workflow (later phase)
+Warning thresholds should initially be configurable raw values. After several personally observed confirmed limits, derive a local calibration curve. Do not ship upstream experimental thresholds as facts.
 
-At configurable warning states, expose a `Prepare handoff` action. It should insert—not automatically send—a standard prompt into ChatGPT's composer asking for concise `PROJECT_STATE.md` and `SESSION_HANDOFF.md` artifacts.
+## Open questions to validate live
 
-Never automatically submit a user message.
-
-## Failure modes
-
-- Conversation endpoint changes -> show `Unavailable`, not zero.
-- JSON mapping incomplete -> reject/mark incomplete rather than silently count the full tree.
-- Unknown model -> historical token estimate still works; no model-context percentage.
-- Branches/regenerations -> use `current_node` parent chain only.
-- Project conversation 404 -> passive interception should normally avoid this; authenticated project-aware fetch can be a later fallback.
-- DOM virtualization -> irrelevant to primary counting path.
-- Token estimator error -> display `~` and retain raw character/message metrics for diagnostics.
-
-## Calibration strategy
-
-Store calibration observations locally, for example:
-
-```json
-{
-  "plan": "plus",
-  "structuralChargeAtConfirmedLimit": 2050,
-  "observedAt": "2026-09-10T00:00:00Z"
-}
-```
-
-After multiple real limit events, derive a personal warning curve. Until then, use qualitative states based on raw metrics rather than claiming precise lifespan percentages.
+- Exact conversation-detail route variants used by normal and Project chats.
+- Whether post-turn refresh with the saved GET request remains reliable.
+- Whether ChatGPT prefetches unrelated conversation-detail requests.
+- Current maximum-length error wording/localizations.
+- Which content types materially affect historical-size estimates.
+- Which metadata fields are genuine compaction evidence rather than ordinary injected context.

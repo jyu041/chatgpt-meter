@@ -2,94 +2,84 @@
 
 Audit date: 2026-09-10.
 
-## 1. joostmbakker/context-window-meter
+## `joostmbakker/context-window-meter`
 
 **Verdict: strongest primary technical reference.**
 
 Useful design:
 
-- Manifest V3 extension scoped to `https://chatgpt.com/*`.
-- MAIN-world script wraps `window.fetch`.
-- Watches `/backend-api/conversation/{conversation-id}` responses.
-- Clones the response; the original response remains untouched.
-- Uses `mapping` + `current_node` and walks parent links to reconstruct the active branch rather than counting every branch.
-- Separates user, assistant, tool, reasoning/thought and system-like content.
+- Manifest V3 scoped to `https://chatgpt.com/*`.
+- MAIN-world `window.fetch` observation.
+- Conversation-detail response cloning; original response remains untouched.
+- `mapping` + `current_node` parent-chain reconstruction rather than whole-tree counting.
+- Separation of user/assistant/tool/reasoning/system-like content.
 - MIT licensed.
 
-Concerns / changes for this project:
+Changes for ChatGPT Meter:
 
-- Its token estimator is heuristic, not an actual model tokenizer.
-- Its hard-coded model context limits can become stale and should not be treated as ChatGPT conversation limits.
-- Its DOM fallback uses a hard-coded 128k denominator and can undercount virtualized conversations; do not make DOM fallback authoritative.
-- It sends extracted role text from MAIN world to the isolated content script. Our design should instead analyze in MAIN world and bridge **aggregate counts only**.
-- Intercepting only conversation GET responses may mean no reading until ChatGPT happens to fetch the conversation. Add navigation/reload handling and, if needed, an explicitly authenticated same-origin fetch strategy later.
+- Do not treat its heuristic tokenizer or hard-coded model limits as authoritative.
+- Do not make its DOM fallback authoritative; long chats may be virtualized.
+- Analyze in MAIN world and bridge aggregate counts only, rather than raw role text.
+- Add reliable post-turn refresh instead of relying on the initial conversation GET alone.
 
-## 2. SpendinFR/UsageChatgpt
+## `SpendinFR/UsageChatgpt`
 
-**Verdict: valuable research; do not copy code.**
+**Verdict: valuable research only; no code copying.**
 
-Useful ideas:
+Useful concepts:
 
-- Validates candidate conversation mappings instead of blindly trusting arbitrary nested objects.
-- Active branch reconstruction from `current_node`.
-- Tracks raw estimated tokens, recent windows, role counts, hidden messages, context/summary markers and model history.
-- Detects ChatGPT's visible maximum-conversation-length notice.
-- Handles Project conversations, including project ID discovery when required.
-- Introduces an experimental structural-load metric.
+- Validate conversation mappings.
+- Active-branch reconstruction.
+- Structural counts, hidden messages, context/summary candidates and model history.
+- Visible maximum-conversation-length detection.
+- Project-chat research.
+- Experimental conversation-lifespan calibration.
 
-Important caveats:
+Caveats:
 
-- No LICENSE file was present in the repository root during this audit. Treat implementation as all-rights-reserved unless clarified; independently implement ideas only.
-- The structural formula is:
+- No root `LICENSE` file was found during this audit. Treat code as all-rights-reserved unless clarified.
+- Published structural formulas/thresholds are experimental and based on limited observations; do not ship them as platform facts.
+- Direct session/access-token retrieval unnecessarily expands attack surface for this project unless passive/same-origin approaches fail.
+- ChatGPT Meter's analyzer/estimator must be independently implemented.
 
-  `assistant_messages + tool_messages - hidden_messages - system_messages`
+## `ZM-BAD/headroom`
 
-- Published thresholds in its current source are Free 900, Plus 1980, Pro 4230.
-- Its validation JSON lists only four calibration cases. That is far too little evidence to call those values authoritative.
-- Therefore, any equivalent metric in ChatGPT Meter must be labelled **experimental** and preferably user-calibrated.
-- Its direct session/access-token retrieval expands complexity and attack surface. Do not start with that unless passive interception proves insufficient.
-
-## 3. ZM-BAD/headroom
-
-**Verdict: good engineering/reference project; not the primary measurement model.**
-
-Useful design:
+**Verdict: useful cross-browser engineering reference.**
 
 - Apache-2.0.
 - WXT + TypeScript.
-- First-class Firefox and Chromium development/build scripts.
-- Good reference for cross-browser packaging, testing and permission discipline.
+- Firefox and Chromium support.
+- Useful reference for permission discipline, packaging and UI engineering.
 
-Reason not to adopt its complete approach:
+Its generalized multi-provider measurement model is not the primary architecture here; ChatGPT Meter can understand ChatGPT's conversation graph directly.
 
-- It is intentionally multi-provider and generalized.
-- Our use case is ChatGPT-specific and benefits from directly understanding the ChatGPT conversation graph.
+## Firefox/WXT findings
 
-## Browser compatibility findings
-
-- Firefox 128 added support relevant to Manifest V3 MAIN-world content scripts.
-- WXT supports cross-browser MAIN-world injection and Firefox builds.
-- Use WXT so we do not maintain separate browser manifests unless a compatibility bug forces it.
+- Firefox 128+ supports the Manifest V3 MAIN-world path required here.
+- WXT supports cross-browser MAIN-world content scripts.
+- WXT's Firefox target must be explicitly built as MV3 for this design; repository scripts use `--mv3` and the manifest config is pinned to version 3.
+- Keep Firefox 128+ as the documented minimum unless testing proves a different bound.
 
 ## Security/privacy rules
 
 1. Host permissions: ChatGPT only.
 2. No remote telemetry, analytics or cloud storage.
 3. Never persist raw prompts/replies/tool output.
-4. Prefer aggregate metrics across the MAIN-world boundary.
-5. Never expose ChatGPT access tokens to extension storage.
-6. Clone intercepted responses; never mutate ChatGPT network responses.
+4. Aggregate metrics only across the MAIN-world boundary.
+5. Never store ChatGPT access/session tokens.
+6. Clone observed responses; never mutate ChatGPT traffic.
 7. Fail open: ChatGPT must continue functioning if meter analysis fails.
-8. Avoid broad DOM scraping; use it only for state/error detection where necessary.
+8. DOM inspection may detect UI/error state, not primary conversation size.
 
 ## Measurement terminology
 
 Do not collapse these into one number:
 
-- `historicalTokensEstimate`: estimated tokens represented by the active historical branch.
-- `contextWindowLimit`: a configured/known model-window denominator, if reliable.
-- `contextWindowPercent`: only when a denominator is known; explicitly an estimate.
-- `structuralPressure`: experimental conversation-lifespan signal.
-- `limitConfirmed`: ChatGPT itself displayed its maximum-length notice.
+- `historicalTokensEstimate`: rough text-token estimate for the active historical branch.
+- `structuralPressureRaw`: experimental raw structural signal.
+- `compactionSignals`: conservative candidate signals, not proof of server-side compaction.
+- `limitConfirmed`: ChatGPT visibly displayed a maximum-length notice.
+- future `contextWindowPercent`: only if an explicitly labeled, reliable denominator exists.
+- future `lifespanPercent`: only after defensible local/empirical calibration.
 
-A 300k-token historical branch does **not** imply that 300k tokens are currently in the model prompt. ChatGPT may summarize, compact, omit or transform older material.
+A 300k historical-token estimate does **not** mean 300k tokens are in the model's current prompt. ChatGPT may summarize, transform or omit older material.
