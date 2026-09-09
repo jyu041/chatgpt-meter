@@ -1,0 +1,20 @@
+{
+  "name": "chatgpt-meter",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:firefox": "wxt -b firefox",
+    "dev:chrome": "wxt",
+    "build:firefox": "wxt build -b firefox",
+    "build:chrome": "wxt build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "wxt": "^0.20.0"
+  }
+}
