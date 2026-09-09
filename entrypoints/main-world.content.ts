@@ -25,8 +25,11 @@ export default defineContentScript({
           void response.clone().json().then((data) => {
             const metrics = analyzeConversation(data);
             if (metrics) {
-              // Aggregate counts only. Never bridge raw conversation content.
-              window.dispatchEvent(new CustomEvent(METRICS_EVENT, { detail: metrics }));
+              // String payload avoids cross-world object-wrapper differences in Firefox.
+              // Aggregate counts only: raw conversation content never crosses the boundary.
+              window.dispatchEvent(
+                new CustomEvent(METRICS_EVENT, { detail: JSON.stringify(metrics) }),
+              );
             }
           }).catch(() => undefined);
         }
