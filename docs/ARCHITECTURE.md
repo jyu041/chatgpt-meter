@@ -9,6 +9,7 @@ Keep separate:
 - `historicalTokensEstimate` — approximate text-token size of the active historical branch.
 - `structuralPressureRaw` — experimental structural signal; no percentage without calibration.
 - `compactionSignals` — explicit candidate metadata/types only; not proof of internal compaction.
+- `compactionSignalLevel` — `unknown`, `possible`, or `observed`; weak recap/context types are never treated as proof.
 - `limitConfirmed` — UI state only when ChatGPT visibly reports a maximum conversation length.
 
 ## Data path
@@ -88,6 +89,7 @@ interface ConversationMetrics {
   roleMessages: Record<Role, number>;
   hiddenMessages: number;
   compactionSignals: number;
+  compactionSignalLevel: 'unknown' | 'possible' | 'observed';
   structuralPressureRaw: number;
   measuredAt: string;
 }
@@ -112,9 +114,11 @@ No model-context percentage and no conversation-lifespan percentage should appea
 7. A meter failure must not break ChatGPT.
 8. DOM inspection is allowed for UI state/error detection, not primary message counting.
 
-## Handoff workflow — later phase
+## Handoff workflow
 
-Add a user-triggered `Prepare handoff` control that fills, but **does not submit**, a prompt requesting concise `PROJECT_STATE.md` and `SESSION_HANDOFF.md` files.
+The expanded panel includes a user-triggered `Prepare handoff` control that fills, but **does not submit**, a prompt requesting concise `PROJECT_STATE.md` and `SESSION_HANDOFF.md` files and optional `EVIDENCE_LOG.md`.
+
+The isolated content script stores settings and aggregate limit observations in extension-local storage. It never stores message content.
 
 Warning thresholds should initially be configurable raw values. After several personally observed confirmed limits, derive a local calibration curve. Do not ship upstream experimental thresholds as facts.
 

@@ -22,6 +22,7 @@ Treat the privacy/security invariants in `ARCHITECTURE.md` as hard requirements.
 - SPA conversation-ID filtering.
 - Best-effort post-turn graph refresh.
 - Synthetic analyzer tests.
+- Compact details/settings panel, local aggregate limit observations, and manual handoff prompt filling.
 
 ## First implementation task
 
@@ -88,6 +89,8 @@ Add `Prepare handoff` that fills the ChatGPT composer with a standard request fo
 - optional `EVIDENCE_LOG.md`
 
 Never auto-send the prompt.
+
+The handoff action is implemented in the expanded panel. Live route and post-turn behavior still require manual Firefox validation against an authenticated ChatGPT session.
 
 ## Do not do
 

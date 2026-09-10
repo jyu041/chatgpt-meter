@@ -2,6 +2,7 @@ export const METRICS_EVENT = 'chatgpt-meter:metrics';
 export const METRICS_REQUEST_EVENT = 'chatgpt-meter:request-latest';
 
 export type Role = 'user' | 'assistant' | 'tool' | 'system' | 'reasoning' | 'other';
+export type CompactionSignalLevel = 'unknown' | 'possible' | 'observed';
 
 export interface ConversationMetrics {
   schemaVersion: 1;
@@ -15,6 +16,7 @@ export interface ConversationMetrics {
   roleMessages: Record<Role, number>;
   hiddenMessages: number;
   compactionSignals: number;
+  compactionSignalLevel: CompactionSignalLevel;
   structuralPressureRaw: number;
   measuredAt: string;
 }
@@ -124,7 +126,7 @@ function activeBranch(mapping: UnknownRecord, currentNode: unknown): UnknownReco
 
   while (id !== null) {
     if (seen.has(id)) return null;
-    const node = mapping[id];
+    const node: unknown = mapping[id];
     if (!isRecord(node)) return null;
 
     seen.add(id);
@@ -154,6 +156,21 @@ function explicitCompactionSignalCount(contentType: string, metadata: UnknownRec
     if (explicitKeys.has(key.toLowerCase()) && value !== false && value != null && value !== '') count += 1;
   }
   return count;
+}
+
+function compactionSignalLevel(
+  count: number,
+  branch: UnknownRecord[],
+): CompactionSignalLevel {
+  if (count > 0) return 'observed';
+  const hasWeakCandidate = branch.some((node) => {
+    const message = isRecord(node.message) ? node.message : {};
+    const content = isRecord(message.content) ? message.content : {};
+    return ['reasoning_recap', 'model_editable_context'].includes(
+      typeof content.content_type === 'string' ? content.content_type : '',
+    );
+  });
+  return hasWeakCandidate ? 'possible' : 'unknown';
 }
 
 export function analyzeConversation(data: unknown): ConversationMetrics | null {
@@ -228,6 +245,7 @@ export function analyzeConversation(data: unknown): ConversationMetrics | null {
     roleMessages,
     hiddenMessages,
     compactionSignals,
+    compactionSignalLevel: compactionSignalLevel(compactionSignals, branch),
     structuralPressureRaw,
     measuredAt: new Date().toISOString(),
   };

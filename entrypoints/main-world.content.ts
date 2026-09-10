@@ -3,6 +3,7 @@ import {
   METRICS_EVENT,
   METRICS_REQUEST_EVENT,
 } from '../lib/analyze';
+import { conversationDetailId, conversationIdFromPath } from '../lib/routes';
 
 export default defineContentScript({
   matches: ['https://chatgpt.com/*'],
@@ -17,19 +18,21 @@ export default defineContentScript({
     const originalFetch = window.fetch;
     let lastMetricsJson: string | null = null;
     let lastConversationRequest: Request | null = null;
+    let lastConversationId: string | null = null;
     let refreshTimer: number | null = null;
 
-    const publish = (data: unknown) => {
+    const publish = (data: unknown, expectedId: string | null = null) => {
       const metrics = analyzeConversation(data);
       if (!metrics) return;
+      if (expectedId && metrics.conversationId && expectedId !== metrics.conversationId) return;
       lastMetricsJson = JSON.stringify(metrics);
       window.dispatchEvent(new CustomEvent(METRICS_EVENT, { detail: lastMetricsJson }));
     };
 
-    const analyzeResponse = async (response: Response) => {
+    const analyzeResponse = async (response: Response, expectedId: string | null = null) => {
       if (!response.ok) return;
       try {
-        publish(await response.json());
+        publish(await response.json(), expectedId);
       } catch {
         // Endpoint shape changed or response was not JSON. Fail open.
       }
@@ -64,7 +67,7 @@ export default defineContentScript({
       if (!request) return;
       try {
         const response = await originalFetch(request);
-        await analyzeResponse(response);
+        await analyzeResponse(response, lastConversationId);
       } catch {
         // Best-effort refresh only.
       }
@@ -84,18 +87,31 @@ export default defineContentScript({
         const requestUrl = request?.url || response.url;
         const url = new URL(requestUrl, location.origin);
         const method = request?.method?.toUpperCase() || 'GET';
-        const isConversationDetail = /^\/backend-api\/(?:f\/)?conversation\/[^/]+\/?$/.test(url.pathname);
-        const isConversationPost = /^\/backend-api\/(?:f\/)?conversation\/?$/.test(url.pathname) && method === 'POST';
+        const requestConversationId = conversationDetailId(url.pathname);
+        const isConversationDetail = requestConversationId !== null;
+        const isConversationPost = /^\/backend-api\/(?:f\/)?conversation(?:s)?\/?$/.test(url.pathname) && method === 'POST';
 
         if (isConversationDetail && method === 'GET') {
-          lastConversationRequest = request?.clone() ?? null;
-          void analyzeResponse(response.clone());
+          void response.clone().json().then((data: unknown) => {
+            const currentRoute = conversationIdFromPath(location.pathname);
+            if (currentRoute && requestConversationId && currentRoute !== requestConversationId) return;
+            lastConversationRequest = request?.clone() ?? null;
+            lastConversationId = requestConversationId;
+            publish(data, requestConversationId);
+          }).catch(() => {
+            // Endpoint shape changed or response was not JSON. Fail open.
+          });
         } else if (isConversationPost && lastConversationRequest) {
           // Do not collect the stream body. Drain only the cloned response so we
           // can refresh the full graph after the turn completes.
           void drainResponse(response.clone()).then(() => {
             if (refreshTimer !== null) window.clearTimeout(refreshTimer);
-            refreshTimer = window.setTimeout(() => void refreshLastConversation(), 250);
+            refreshTimer = window.setTimeout(() => {
+              const currentRoute = conversationIdFromPath(location.pathname);
+              if (currentRoute && lastConversationId && currentRoute === lastConversationId) {
+                void refreshLastConversation();
+              }
+            }, 250);
           });
         }
       } catch {

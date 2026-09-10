@@ -12,7 +12,7 @@ Keep these separate:
 
 The extension does **not** claim access to OpenAI's internal context counter. A historical branch size is not the same as the model's live prompt/context usage.
 
-## Current baseline
+## Current implementation
 
 The skeleton now includes:
 
@@ -22,9 +22,11 @@ The skeleton now includes:
 - Aggregate-only cross-world events; raw conversation text stays in MAIN world.
 - Best-effort refresh after a streamed conversation POST completes.
 - Conversation-ID filtering across ChatGPT SPA navigation.
-- A deliberately small in-page badge: `History ~82k · Pressure 734`.
-- Detection of visible maximum-length errors as a separate confirmed state.
-- Pure analyzer tests with synthetic conversation graphs.
+- A deliberately small in-page badge: `History ~82k · Pressure 734`, with a details panel.
+- Local settings for visibility, default expansion, and approximate warning thresholds.
+- A user-triggered `Prepare handoff` action that fills, but never submits, the composer.
+- Detection of visible maximum-length errors as a separate confirmed state, with aggregate-only local calibration observations.
+- Pure analyzer tests with synthetic conversation graphs, including malformed and structured content.
 
 No percentage is shown until a defensible denominator/calibration exists.
 
@@ -53,6 +55,8 @@ npm run build:chrome
 ```
 
 `npm install` generates `package-lock.json`; commit it once dependencies are installed locally.
+
+The observer recognizes `/backend-api/conversation/{id}`, `/backend-api/conversations/{id}`, and their `/f/` variants. Project chats are selected by the normal `/c/{id}` route. ChatGPT endpoint behavior can change, so live validation remains necessary.
 
 ## Privacy rules
 

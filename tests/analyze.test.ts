@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeConversation, estimateTokens } from '../lib/analyze';
+import { conversationDetailId, conversationIdFromPath } from '../lib/routes';
 
 function node(parent: string | null, role?: string, text?: string, metadata: Record<string, unknown> = {}) {
   return {
@@ -122,5 +123,65 @@ describe('analyzeConversation', () => {
 
     const result = analyzeConversation(data);
     expect(result?.roleMessages.system).toBe(1);
+    expect(result?.compactionSignalLevel).toBe('possible');
+  });
+
+  it('aggregates hidden, tool, reasoning, structured, CJK, and code content', () => {
+    const data = {
+      id: 'mixed', default_model_slug: 'gpt-4o', current_node: 'tool',
+      mapping: {
+        root: node(null),
+        user: node('root', 'user', '你好世界'),
+        assistant: node('user', 'assistant', '```ts\nconst answer = 1\n```'),
+        reasoning: { parent: 'assistant', message: { author: { role: 'assistant' }, content: { content_type: 'thoughts', parts: [{ text: 'internal reasoning' }] }, metadata: { is_hidden: true } } },
+        tool: { parent: 'reasoning', message: { author: { role: 'tool' }, content: { content_type: 'computer_output', parts: [{ output: 'search result' }, { asset_pointer: 'file-id' }] }, metadata: {} } },
+      },
+    };
+    const result = analyzeConversation(data);
+    expect(result?.roleMessages.user).toBe(1);
+    expect(result?.roleMessages.assistant).toBe(1);
+    expect(result?.roleMessages.tool).toBe(1);
+    expect(result?.roleMessages.reasoning).toBe(1);
+    expect(result?.roleTokens.tool).toBeGreaterThan(0);
+    expect(result?.hiddenMessages).toBe(1);
+    expect(result?.modelSlug).toBe('gpt-4o');
+  });
+
+  it('supports incomplete messages and unknown structured content without counting IDs', () => {
+    const data = {
+      id: 'structured', current_node: 'x',
+      mapping: {
+        root: node(null),
+        x: { parent: 'root', message: { author: { role: 'assistant' }, content: { content_type: 'future_type', id: 'not text', payload: { value: 'kept text' } }, metadata: {} } },
+      },
+    };
+    const result = analyzeConversation(data);
+    expect(result?.activeBranchMessages).toBe(1);
+    expect(result?.historicalCharacters).toBe('kept text'.length);
+  });
+
+  it('recognizes an explicit compaction marker as observed', () => {
+    const data = { id: 'compact', current_node: 'x', mapping: { root: node(null), x: node('root', 'assistant', 'summary', { context_truncated: true }) } };
+    expect(analyzeConversation(data)?.compactionSignalLevel).toBe('observed');
+    expect(analyzeConversation(data)?.compactionSignals).toBe(1);
+  });
+
+  it('uses the most specific model slug seen on the active branch', () => {
+    const data = { id: 'models', default_model_slug: 'old-model', current_node: 'x', mapping: { root: node(null), x: node('root', 'assistant', 'answer', { resolved_model_slug: 'new-model' }) } };
+    expect(analyzeConversation(data)?.modelSlug).toBe('new-model');
+  });
+});
+
+describe('route matching', () => {
+  it('matches normal and Project-style conversation routes without accepting new chat', () => {
+    expect(conversationIdFromPath('/c/abc123')).toBe('abc123');
+    expect(conversationIdFromPath('/g/project/c/abc123')).toBe('abc123');
+    expect(conversationIdFromPath('/')).toBeNull();
+  });
+
+  it('matches current conversation detail URL variants', () => {
+    expect(conversationDetailId('/backend-api/conversation/abc')).toBe('abc');
+    expect(conversationDetailId('/backend-api/f/conversations/abc')).toBe('abc');
+    expect(conversationDetailId('/backend-api/conversation')).toBeNull();
   });
 });

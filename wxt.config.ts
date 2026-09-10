@@ -9,7 +9,7 @@ export default defineConfig({
     ...(browser === 'firefox'
       ? {
           browser_specific_settings: {
-            gecko: { strict_min_version: '128.0' },
+            gecko: { id: 'chatgpt-meter@jyu041', strict_min_version: '128.0' },
           },
         }
       : {}),

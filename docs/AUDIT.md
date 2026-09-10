@@ -59,6 +59,7 @@ Its generalized multi-provider measurement model is not the primary architecture
 - WXT supports cross-browser MAIN-world content scripts.
 - WXT's Firefox target must be explicitly built as MV3 for this design; repository scripts use `--mv3` and the manifest config is pinned to version 3.
 - Keep Firefox 128+ as the documented minimum unless testing proves a different bound.
+- The generated Firefox manifest contains only the ChatGPT host permission and a stable extension ID. WXT may warn about Firefox's newer data-collection declaration; this extension has no telemetry, analytics, or remote service and stores only local settings and aggregate calibration observations.
 
 ## Security/privacy rules
 
