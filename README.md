@@ -18,6 +18,7 @@ The skeleton now includes:
 
 - Firefox/Chromium Manifest V3 via WXT.
 - MAIN-world observation of ChatGPT conversation-detail responses.
+- First-class support for the current paginated `GET /backend-api/conversations/{id}` `messages[]` response, plus legacy `mapping` compatibility.
 - Active-branch reconstruction using `mapping` + `current_node`.
 - Aggregate-only cross-world events; raw conversation text stays in MAIN world.
 - Best-effort refresh after a streamed conversation POST completes.
@@ -58,7 +59,9 @@ npm run build:chrome
 
 The observer recognizes `/backend-api/conversation/{id}`, `/backend-api/conversations/{id}`, and their `/f/` variants. Project chats are selected by the normal `/c/{id}` route. ChatGPT endpoint behavior can change, so live validation remains necessary.
 
-Warning thresholds start unset. They are optional, user-defined warnings and are not ChatGPT limits. Maximum-length detection uses a debounced alert/live-region scan with a throttled full-text fallback; it does not count messages from the DOM.
+As verified in the September 10, 2026 Firefox test, current ChatGPT commonly requests the plural endpoint with `num_turns=10`. The meter follows `page_info.start_cursor` backwards sequentially using `before=` and `num_turns=100` until history is complete. This is an observed private contract, not a stability guarantee.
+
+Warning thresholds start unset. They are optional, user-defined warnings and are not ChatGPT limits. Maximum-length detection uses only a debounced bounded alert/live-region scan; it deliberately has no full-conversation text fallback.
 
 ## Privacy rules
 

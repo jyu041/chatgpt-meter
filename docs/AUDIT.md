@@ -61,6 +61,12 @@ Its generalized multi-provider measurement model is not the primary architecture
 - Keep Firefox 128+ as the documented minimum unless testing proves a different bound.
 - The generated Firefox manifest contains only the ChatGPT host permission and a stable extension ID. WXT may warn about Firefox's newer data-collection declaration; this extension has no telemetry, analytics, or remote service and stores only local settings and aggregate calibration observations.
 
+## September 10, 2026 live finding
+
+An authenticated Firefox test observed ChatGPT using `GET /backend-api/conversations/{id}?include_has_versions=true&num_turns=10` with a 200 JSON response containing paginated `messages[]`, `current_node`, and `page_info`. The plural endpoint is now the primary path in this implementation. The legacy singular `conversation/{id}` `mapping` + `current_node` shape remains a compatibility path for accounts/builds that still expose it.
+
+The implementation uses message `id` for deduplication and the observed `page_info.has_previous_page` / `start_cursor` fields for backwards pagination. The supplied evidence does not establish whether `include_has_versions=true` makes `messages[]` include alternate regenerated versions or guarantees that it is already the selected branch. Until a sanitized payload confirms those semantics, paginated messages are treated as the endpoint's selected sequence and alternate-version selection is documented as uncertain.
+
 ## Security/privacy rules
 
 1. Host permissions: ChatGPT only.

@@ -67,7 +67,6 @@ export default defineContentScript({
     let root: HTMLButtonElement | null = null;
     let panel: HTMLDivElement | null = null;
     let limitCheckTimer: number | null = null;
-    let lastFullLimitCheck = 0;
 
     const saveSettings = () => void browser.storage.local.set({ [STORAGE_KEY]: settings });
     const recordLimit = async () => {
@@ -127,10 +126,10 @@ export default defineContentScript({
       const critical = thresholdReached(pressure, settings.pressureCritical);
       const warning = thresholdReached(pressure, settings.pressureWarning) || thresholdReached(history, settings.historyWarning);
       root.style.borderColor = critical ? '#c33' : warning ? '#c80' : 'color-mix(in srgb,currentColor 18%,transparent)';
-      root.textContent = limitConfirmed ? 'Limit confirmed' : metrics ? `History ~${compactNumber(metrics.historicalTokensEstimate)} · Pressure ${compactNumber(metrics.structuralPressureRaw)}` : currentConversationId() ? 'Meter: reading...' : 'Meter: new chat';
+      root.textContent = limitConfirmed ? 'Limit confirmed' : metrics?.measurementState === 'partial' ? `History ~${compactNumber(metrics.historicalTokensEstimate)}+ · loading older history...` : metrics?.measurementState === 'unavailable' ? 'Meter unavailable' : metrics ? `History ~${compactNumber(metrics.historicalTokensEstimate)} · Pressure ${compactNumber(metrics.structuralPressureRaw)}` : currentConversationId() ? 'Meter: reading...' : 'Meter: new chat';
       if (!metrics) { panel.replaceChildren(makeText('Status', currentConversationId() ? 'Reading...' : 'New chat')); return; }
       panel.replaceChildren(
-        makeText('Historical tokens', `~${metrics.historicalTokensEstimate.toLocaleString()}`), makeText('Characters', metrics.historicalCharacters.toLocaleString()),
+        makeText('Status', metrics.measurementState === 'complete' ? 'Complete' : `${metrics.measurementState} (${metrics.pagesLoaded} pages)`), makeText('Historical tokens', `~${metrics.historicalTokensEstimate.toLocaleString()}${metrics.hasMoreHistory ? '+' : ''}`), makeText('Characters', metrics.historicalCharacters.toLocaleString()),
         makeText('Active nodes / messages', `${metrics.activeBranchNodes} / ${metrics.activeBranchMessages}`), makeText('User tokens', metrics.roleTokens.user.toLocaleString()), makeText('Assistant tokens', metrics.roleTokens.assistant.toLocaleString()), makeText('Tool tokens', metrics.roleTokens.tool.toLocaleString()), makeText('Reasoning tokens', metrics.roleTokens.reasoning.toLocaleString()), makeText('System / other', `${metrics.roleTokens.system.toLocaleString()} / ${metrics.roleTokens.other.toLocaleString()}`), makeText('Hidden messages', String(metrics.hiddenMessages)), makeText('Compaction signals', `${metrics.compactionSignals} (${metrics.compactionSignalLevel})`), makeText('Raw pressure', `${metrics.structuralPressureRaw} (experimental)`), makeText('Model', metrics.modelSlug ?? 'unknown'), makeText('Measured', new Date(metrics.measuredAt).toLocaleString()), makeText('Hard limit confirmed', limitConfirmed ? 'yes' : 'not observed'),
       );
       const handoff = document.createElement('button'); handoff.type = 'button'; handoff.textContent = 'Prepare handoff'; handoff.style.cssText = 'margin-top:8px;width:100%;padding:6px;cursor:pointer'; handoff.addEventListener('click', fillComposer); panel.append(handoff);
@@ -156,19 +155,9 @@ export default defineContentScript({
           render();
           return;
         }
-        const now = Date.now();
-        if (now - lastFullLimitCheck >= 1500) {
-          lastFullLimitCheck = now;
-          if (containsMaximumLengthNotice(document.body?.innerText ?? '')) {
-            limitConfirmed = true;
-            void recordLimit();
-            render();
-            return;
-          }
-        }
       }, 300);
     };
-    const resetForNavigation = () => { metrics = null; limitConfirmed = false; expanded = settings.expandedDefault; lastFullLimitCheck = 0; render(); void loadLimitState(); window.dispatchEvent(new CustomEvent(METRICS_REQUEST_EVENT)); scheduleLimitCheck(); };
+    const resetForNavigation = () => { metrics = null; limitConfirmed = false; expanded = settings.expandedDefault; render(); void loadLimitState(); window.dispatchEvent(new CustomEvent(METRICS_REQUEST_EVENT)); scheduleLimitCheck(); };
     window.addEventListener(METRICS_EVENT, (event) => {
       if (!(event instanceof CustomEvent) || typeof event.detail !== 'string') return;
       try { const parsed: unknown = JSON.parse(event.detail); const routeId = currentConversationId(); if (!isMetrics(parsed) || !routeId || parsed.conversationId !== routeId) return; metrics = parsed; render(); } catch { /* malformed bridge data is ignored */ }

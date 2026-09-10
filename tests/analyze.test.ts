@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeConversation, estimateTokens, withConversationId } from '../lib/analyze';
+import { aggregateMeasurements, analyzeConversation, estimateTokens, measureMessages, withConversationId } from '../lib/analyze';
 import { upsertLimitObservation, type LimitObservation } from '../lib/calibration';
+import { nextPageCursor, parsePageInfo } from '../lib/pagination';
 import { conversationDetailId, conversationIdFromPath } from '../lib/routes';
 import { thresholdReached } from '../lib/settings';
 
@@ -173,6 +174,38 @@ describe('analyzeConversation', () => {
     expect(analyzeConversation(data)?.modelSlug).toBe('new-model');
   });
 
+  it('analyzes a paginated messages page and preserves equivalent aggregates', () => {
+    const messages = [
+      { id: 'u1', author: { role: 'user' }, content: { content_type: 'text', parts: ['question'] }, metadata: {} },
+      { id: 'a1', author: { role: 'assistant' }, content: { content_type: 'text', parts: ['answer'] }, metadata: {} },
+    ];
+    const result = analyzeConversation({ conversation_id: 'page-1', current_node: 'a1', messages, page_info: { has_previous_page: false, start_cursor: null } });
+    const legacy = analyzeConversation({ id: 'page-1', current_node: 'a1', mapping: { root: node(null), u1: node('root', 'user', 'question'), a1: node('u1', 'assistant', 'answer') } });
+    expect(result?.historicalCharacters).toBe(legacy?.historicalCharacters);
+    expect(result?.historicalTokensEstimate).toBe(legacy?.historicalTokensEstimate);
+    expect(result?.measurementState).toBe('complete');
+  });
+
+  it('measures empty and overlapping pages by stable ID', () => {
+    const first = measureMessages([{ id: 'a', author: { role: 'assistant' }, content: { parts: ['one'] } }]);
+    const second = measureMessages([{ id: 'a', author: { role: 'assistant' }, content: { parts: ['changed duplicate'] } }, { id: 'b', author: { role: 'user' }, content: { parts: ['two'] } }]);
+    const unique = new Map([...first, ...second].map((item) => [item.id, item]));
+    expect(unique.size).toBe(2);
+    expect(measureMessages([])).toEqual([]);
+  });
+
+  it('represents a paginated partial page and a complete merged history', () => {
+    const pageOne = [{ id: 'new', author: { role: 'assistant' }, content: { parts: ['new'] } }];
+    const pageTwo = [{ id: 'old', author: { role: 'user' }, content: { parts: ['old'] } }, ...pageOne];
+    const partial = analyzeConversation({ conversation_id: 'paged', messages: pageOne, page_info: { has_previous_page: true, start_cursor: 'cursor-1' } }, { measurementState: 'partial', pagesLoaded: 1, hasMoreHistory: true });
+    const merged = [...measureMessages(pageOne), ...measureMessages(pageTwo.filter((message) => message.id !== 'new'))];
+    const complete = aggregateMeasurements({ conversation_id: 'paged' }, merged, merged.length, { measurementState: 'complete', pagesLoaded: 2, hasMoreHistory: false });
+    expect(partial?.measurementState).toBe('partial');
+    expect(complete.measurementState).toBe('complete');
+    expect(complete.messagesMeasured).toBe(2);
+    expect(complete.hasMoreHistory).toBe(false);
+  });
+
   it('uses the endpoint ID when the graph omits its conversation ID', () => {
     const metrics = analyzeConversation({ current_node: 'x', mapping: { root: node(null), x: node('root', 'user', 'hello') } });
     expect(metrics).not.toBeNull();
@@ -205,5 +238,16 @@ describe('route matching', () => {
     expect(conversationDetailId('/backend-api/conversation/abc')).toBe('abc');
     expect(conversationDetailId('/backend-api/f/conversations/abc')).toBe('abc');
     expect(conversationDetailId('/backend-api/conversation')).toBeNull();
+  });
+});
+
+describe('pagination guards', () => {
+  it('rejects malformed page info and prevents cursor loops/cap overflow', () => {
+    expect(parsePageInfo({ has_previous_page: true })).toEqual({ hasPreviousPage: true, startCursor: null });
+    expect(parsePageInfo({ has_previous_page: 'true' })).toBeNull();
+    const seen = new Set<string>();
+    expect(nextPageCursor({ hasPreviousPage: true, startCursor: 'c1' }, seen, 1, 100)).toBe('c1');
+    expect(nextPageCursor({ hasPreviousPage: true, startCursor: 'c1' }, seen, 2, 100)).toBeNull();
+    expect(nextPageCursor({ hasPreviousPage: true, startCursor: 'c2' }, seen, 100, 100)).toBeNull();
   });
 });

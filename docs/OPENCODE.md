@@ -23,6 +23,7 @@ Treat the privacy/security invariants in `ARCHITECTURE.md` as hard requirements.
 - Best-effort post-turn graph refresh.
 - Synthetic analyzer tests.
 - Compact details/settings panel, local aggregate limit observations, and manual handoff prompt filling.
+- September 10 live evidence showed current ChatGPT using plural paginated `messages[]` responses; the meter now paginates this source and keeps legacy mapping as compatibility support.
 
 ## First implementation task
 
@@ -91,6 +92,10 @@ Add `Prepare handoff` that fills the ChatGPT composer with a standard request fo
 Never auto-send the prompt.
 
 The handoff action is implemented in the expanded panel. Live route and post-turn behavior still require manual Firefox validation against an authenticated ChatGPT session.
+
+For the next live payload inspection, capture only structural fields: message IDs, author roles, parent/version fields, array order, `page_info`, and whether `include_has_versions=true` changes the returned set. Never log message content or request headers.
+
+Optional structural diagnostics can be enabled for a local tab only with `window.__chatgptMeterDebug__ = true` before the observer initializes. They report format, page counts, cursors, and unique-message counts only; debug mode defaults off.
 
 ## Do not do
 

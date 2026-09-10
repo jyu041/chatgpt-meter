@@ -18,8 +18,8 @@ Keep separate:
 ChatGPT MAIN world
   window.fetch
       │
-      ├─ observe GET /backend-api/.../conversation/{id}
-      │      └─ clone JSON response
+       ├─ observe GET /backend-api/.../conversations/{id}
+       │      └─ clone JSON response and paginate older messages
       │
       ├─ analyze active branch locally
       │      └─ raw text exists only during analysis
@@ -30,7 +30,7 @@ ChatGPT MAIN world
 isolated content script
   validate schema + route conversation ID
   render small badge
-  detect visible confirmed-limit message (debounced likely-alert scan, throttled full fallback)
+  detect visible confirmed-limit message (debounced bounded likely-alert scan)
 ```
 
 ### Live refresh
@@ -38,6 +38,8 @@ isolated content script
 The baseline remembers a clone of the last successful conversation-detail request. After a cloned conversation POST response finishes streaming, it performs a best-effort same-origin refresh using that request and re-analyzes the resulting full graph.
 
 This is deliberately provisional. OpenCode must validate it against current ChatGPT and Project conversations. If the endpoint/request contract changes, prefer another same-origin aggregate-safe strategy; do not introduce access-token persistence merely for convenience.
+
+The current plural response is measured page by page. The first page is published as `partial` while `page_info.has_previous_page` is true; older pages are requested sequentially with `before=<start_cursor>` and `num_turns=100`. Cursor loops, route changes, newer measurements, failed pages, and a 100-page cap stop the run without presenting an incomplete result as complete.
 
 ## Components
 
@@ -47,6 +49,7 @@ This is deliberately provisional. OpenCode must validate it against current Chat
 - Wraps `window.fetch` once.
 - Never mutates requests/responses.
 - Recognizes conversation-detail GETs and conversation POSTs.
+- Uses plural paginated conversations as the primary source and retains legacy mapping support.
 - Clones only responses required for lifecycle detection/analysis.
 - Calls the pure analyzer in MAIN world.
 - Emits aggregate JSON only.
@@ -62,7 +65,9 @@ This is deliberately provisional. OpenCode must validate it against current Chat
 - Detects visible maximum-length wording separately.
 - Does not scrape conversation messages for measurement.
 
-Limit detection first checks alert/live-region/toast-like elements after a 300 ms mutation debounce. A full body-text fallback is allowed at most once every 1.5 seconds while mutations continue; it is lifecycle/error detection only, never conversation measurement.
+Paginated `messages[]` records are converted immediately into aggregate message measurements and deduplicated by stable message `id`. The endpoint's selected-sequence/version semantics are not yet independently established; alternate versions must not be inferred from text or ordering.
+
+Limit detection checks only bounded alert/live-region/toast-like elements after a 300 ms mutation debounce. It deliberately has no arbitrary conversation/body-text fallback, so a false negative is preferred to treating discussion text as a confirmed limit.
 
 ### `lib/analyze.ts`
 
@@ -94,6 +99,10 @@ interface ConversationMetrics {
   compactionSignalLevel: 'unknown' | 'possible' | 'observed';
   structuralPressureRaw: number;
   measuredAt: string;
+  measurementState: 'loading' | 'partial' | 'complete' | 'unavailable';
+  pagesLoaded: number;
+  messagesMeasured: number;
+  hasMoreHistory: boolean;
 }
 ```
 
