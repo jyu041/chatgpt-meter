@@ -1,91 +1,84 @@
-# ChatGPT Meter
+# Conversation Meter for ChatGPT
 
-Private Firefox/Chromium extension for estimating the size of the current ChatGPT conversation and warning before a handoff is prudent.
+An unofficial Firefox-first extension that estimates the observable historical size of the current ChatGPT conversation and shows experimental structural pressure.
 
-## What it measures
+**Unofficial third-party extension. Not affiliated with, endorsed by, or supported by OpenAI.**
 
-Keep these separate:
+## Why
 
-1. **History size** — estimated text tokens represented by the active conversation branch.
-2. **Structural pressure** — experimental node/message/hidden/compaction signals that may correlate with conversation lifespan.
-3. **Confirmed limit** — only when ChatGPT itself displays a maximum-conversation-length error.
+ChatGPT does not expose a clear conversation-lifespan meter. Long technical conversations can eventually reach a maximum conversation length, while the useful signals available to an extension are only partial observations.
 
-The extension does **not** claim access to OpenAI's internal context counter. A historical branch size is not the same as the model's live prompt/context usage.
+## What It Shows
 
-## Current implementation
+- Approximate historical conversation tokens and characters
+- User, assistant, tool, reasoning, system, and other breakdowns
+- Active conversation structure and hidden-message counts
+- Experimental raw structural pressure
+- Conservative compaction signals
+- A separately observed conversation-limit state
+- A `Prepare handoff` action that fills the composer without submitting
 
-The skeleton now includes:
+## Important Distinction
 
-- Firefox/Chromium Manifest V3 via WXT.
-- MAIN-world observation of ChatGPT conversation-detail responses.
-- First-class support for the current paginated `GET /backend-api/conversations/{id}` `messages[]` response, plus legacy `mapping` compatibility.
-- Active-branch reconstruction using `mapping` + `current_node`.
-- Aggregate-only cross-world events; raw conversation text stays in MAIN world.
-- Best-effort refresh after a streamed conversation POST completes.
-- Conversation-ID filtering across ChatGPT SPA navigation.
-- A deliberately small in-page badge: `History ~82k · Pressure 734`, with a details panel.
-- Local settings for visibility, default expansion, and approximate warning thresholds.
-- A user-triggered `Prepare handoff` action that fills, but never submits, the composer.
-- Detection of visible maximum-length errors as a separate confirmed state, with aggregate-only local calibration observations.
-- Pure analyzer tests with synthetic conversation graphs, including malformed and structured content.
+Historical tokens are not the model's current context-window usage. The extension cannot access OpenAI's internal context counter. Structural pressure is experimental and is not an OpenAI metric or a universal conversation limit.
 
-No percentage is shown until a defensible denominator/calibration exists.
+## Screenshots
 
-## Development
+Screenshots are intentionally not committed until they can be captured from a clean authenticated browser session without private conversation content. See [`assets/README.md`](assets/README.md) for the release asset plan.
 
-Requires Node 20+ and Firefox 128+ for the Firefox MV3 MAIN-world path.
+## Browser Support
+
+- Firefox 128+: primary target and live-tested with authenticated ChatGPT sessions
+- Chromium: MV3 build-tested; additional browser validation remains pending
+
+## Installation
+
+For development, install Node.js 20 or newer, then:
 
 ```bash
-npm install
+npm ci
 npm run dev:firefox
 ```
 
-Chromium:
+Load the generated development extension in Firefox. Chromium development uses `npm run dev:chrome`.
+
+## Privacy
+
+Conversation data is analyzed locally in the ChatGPT page. The extension may make additional authenticated same-origin requests to ChatGPT to retrieve older pages of the current conversation. It does not send conversation content to the developer or a third-party service. See [`PRIVACY.md`](PRIVACY.md) and [`SECURITY.md`](SECURITY.md).
+
+## Development
 
 ```bash
-npm run dev:chrome
+npm ci
+npm run check
 ```
 
-Checks/builds:
+Tests use synthetic fixtures only. Do not commit real conversations, credentials, cookies, or request captures.
+
+## Building
 
 ```bash
-npm run test
-npm run typecheck
 npm run build:firefox
 npm run build:chrome
+npm run zip:firefox
+npm run zip:chrome
 ```
 
-`npm install` generates `package-lock.json`; commit it once dependencies are installed locally.
+See [`SOURCE_CODE_REVIEW.md`](SOURCE_CODE_REVIEW.md) for reproducible Firefox source-review instructions.
 
-The observer recognizes `/backend-api/conversation/{id}`, `/backend-api/conversations/{id}`, and their `/f/` variants. Project chats are selected by the normal `/c/{id}` route. ChatGPT endpoint behavior can change, so live validation remains necessary.
+## Limitations
 
-As verified in the September 10, 2026 Firefox test, current ChatGPT commonly requests the plural endpoint with `num_turns=10`. The meter follows `page_info.start_cursor` backwards sequentially using `before=` and `num_turns=100` until history is complete. This is an observed private contract, not a stability guarantee.
+- Token estimates are deliberately approximate.
+- ChatGPT's private endpoints and response formats may change without notice.
+- Paginated message responses are treated as the endpoint's selected sequence; regenerated/edited version semantics remain uncertain.
+- Historical size is not current model context usage.
+- Structural pressure has no universal denominator or threshold.
+- A reopened conversation cannot prove a prior hard-limit UI event that is no longer visible.
 
-Warning thresholds start unset. They are optional, user-defined warnings and are not ChatGPT limits. Maximum-length detection uses only a debounced bounded alert/live-region scan; it deliberately has no full-conversation text fallback.
+## License
 
-`Open panel by default` controls whether the details panel opens when a conversation is loaded or navigated to. It does not enable or disable the independent threshold fields.
+MIT. See [`LICENSE`](LICENSE).
 
-## Observed calibration data
+## Disclaimer
 
-On 2026-09-10, a known previously maxed conversation was reopened and measured at approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483. The hard-limit UI was not observed by the extension during this measurement, so this is a retrospective near/at-limit calibration observation, not `limitConfirmed`. One personal observation is insufficient to infer a universal threshold.
-
-## Privacy rules
-
-- Host scope: `https://chatgpt.com/*` only.
-- No telemetry, analytics, remote storage or cloud processing.
-- Never persist raw prompts, replies, tool output or access tokens.
-- Raw conversation content must not cross the MAIN-world/extension bridge.
-- Clone observed responses; never mutate ChatGPT traffic.
-- Fail open: extension failure must not interfere with ChatGPT.
-
-## Docs
-
-- [`docs/AUDIT.md`](docs/AUDIT.md) — upstream research and constraints.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — data path and invariants.
-- [`docs/OPENCODE.md`](docs/OPENCODE.md) — concise implementation handoff.
-
-## Reference projects
-
-- `joostmbakker/context-window-meter` — MIT; primary reference for active-branch conversation-graph observation.
-- `SpendinFR/UsageChatgpt` — useful structural/limit research; no root license found during the audit, so concepts only and no code copying.
-- `ZM-BAD/headroom` — Apache-2.0; useful WXT/cross-browser engineering reference.
+Unofficial third-party extension. Not affiliated with, endorsed by, or supported by OpenAI. ChatGPT and OpenAI are trademarks of their respective owners.

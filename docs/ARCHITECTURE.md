@@ -131,7 +131,7 @@ The expanded panel includes a user-triggered `Prepare handoff` control that fill
 
 The isolated content script stores settings and aggregate limit observations in extension-local storage. It never stores message content.
 
-Warning thresholds should initially be configurable raw values. After several personally observed confirmed limits, derive a local calibration curve. Do not ship upstream experimental thresholds as facts.
+Warning thresholds should initially be configurable raw values. After several locally observed confirmed limits, derive a local calibration curve. Do not ship upstream experimental thresholds as facts.
 
 The local `Open panel by default` preference controls details-panel expansion on conversation load/navigation; each threshold remains independently optional.
 

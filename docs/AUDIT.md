@@ -59,7 +59,7 @@ Its generalized multi-provider measurement model is not the primary architecture
 - WXT supports cross-browser MAIN-world content scripts.
 - WXT's Firefox target must be explicitly built as MV3 for this design; repository scripts use `--mv3` and the manifest config is pinned to version 3.
 - Keep Firefox 128+ as the documented minimum unless testing proves a different bound.
-- The generated Firefox manifest contains only the ChatGPT host permission and a stable extension ID. WXT may warn about Firefox's newer data-collection declaration; this extension has no telemetry, analytics, or remote service and stores only local settings and aggregate calibration observations.
+- The generated Firefox manifest contains only the ChatGPT host permission, storage permission, a stable extension ID, and Firefox's explicit `data_collection_permissions.required: ["none"]` declaration. This extension has no telemetry, analytics, or remote service and stores only local settings and aggregate calibration observations.
 
 ## September 10, 2026 live finding
 
@@ -69,7 +69,7 @@ The implementation uses message `id` for deduplication and the observed `page_in
 
 ## Observed calibration data
 
-On 2026-09-10, a known previously maxed conversation was reopened and measured at approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483. The extension did not observe the terminal hard-limit UI event, so this remains a retrospective near/at-limit observation and is not `limitConfirmed`. It is personal calibration evidence only; no universal threshold is inferred.
+On 2026-09-10, a known previously maxed test conversation was reopened and measured at approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483. The extension did not observe the terminal hard-limit UI event, so this remains a retrospective near/at-limit observation and is not `limitConfirmed`. It is user-local calibration evidence only; no universal threshold is inferred.
 
 ## Security/privacy rules
 

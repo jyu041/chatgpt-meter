@@ -1,7 +1,7 @@
 {
   "name": "chatgpt-meter",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -14,7 +14,9 @@
     "build:chrome": "wxt build -b chrome --mv3",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build:firefox"
+    "check": "npm run typecheck && npm run test && npm run build:firefox && npm run build:chrome",
+    "zip:firefox": "wxt zip -b firefox --mv3",
+    "zip:chrome": "wxt zip -b chrome --mv3"
   },
   "devDependencies": {
     "typescript": "^5.9.0",
