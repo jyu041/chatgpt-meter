@@ -2,6 +2,7 @@ import { METRICS_EVENT, METRICS_REQUEST_EVENT, type ConversationMetrics } from '
 import { upsertLimitObservation, type LimitObservation } from '../lib/calibration';
 import { conversationIdFromPath } from '../lib/routes';
 import { thresholdReached } from '../lib/settings';
+import { findComposer, prepareHandoff, type HandoffResult } from '../lib/handoff';
 
 const ROOT_ID = 'chatgpt-meter-root';
 const STORAGE_KEY = 'chatgpt-meter:settings';
@@ -147,6 +148,7 @@ const STYLE_TEXT = `
 .cgm-label { min-width: 0; color: var(--cgm-secondary); }
 .cgm-value { min-width: 0; color: var(--cgm-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
 .cgm-status { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; background: var(--cgm-bg-secondary); color: var(--cgm-secondary); font-size: 11px; }
+.cgm-handoff-status { min-height: 18px; color: var(--cgm-secondary); font-size: 11px; }
 .cgm-primary-value { margin: 2px 0 0; color: var(--cgm-text); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cgm-button { width: 100%; margin: 14px 0 2px; padding: 7px 10px; border: 1px solid var(--cgm-border); border-radius: 8px; background: var(--cgm-bg-secondary); color: var(--cgm-text); font: inherit; cursor: pointer; }
 .cgm-button:hover { background: var(--cgm-hover); }
@@ -176,9 +178,10 @@ export default defineContentScript({
     let root: HTMLButtonElement | null = null;
     let panel: HTMLDivElement | null = null;
     let limitCheckTimer: number | null = null;
+    let handoffStatusTimer: number | null = null;
     let badgeRefs: { historyLabel: HTMLSpanElement; history: HTMLSpanElement; separator: HTMLSpanElement; pressureLabel: HTMLSpanElement; pressure: HTMLSpanElement } | null = null;
     let panelRefs: {
-      status: HTMLSpanElement; history: HTMLElement; messages: HTMLSpanElement; nodes: HTMLSpanElement;
+      status: HTMLSpanElement; handoffStatus: HTMLDivElement; history: HTMLElement; messages: HTMLSpanElement; nodes: HTMLSpanElement;
       user: HTMLSpanElement; assistant: HTMLSpanElement; tools: HTMLSpanElement; reasoning: HTMLSpanElement; system: HTMLSpanElement;
       characters: HTMLSpanElement; pressure: HTMLSpanElement; hidden: HTMLSpanElement; compaction: HTMLSpanElement;
       model: HTMLSpanElement; measured: HTMLSpanElement; confirmed: HTMLSpanElement;
@@ -276,16 +279,25 @@ export default defineContentScript({
       badgeRefs.pressure.textContent = '';
     };
 
+    const handoffMessage = (result: HandoffResult): string => ({
+      inserted: 'Handoff prompt inserted',
+      'composer-not-found': 'Composer not found',
+      'composer-already-has-draft': 'Composer already contains a draft',
+      'insert-failed': 'Could not insert prompt',
+    })[result];
+
+    const showHandoffStatus = (result: HandoffResult) => {
+      if (!panelRefs) return;
+      panelRefs.handoffStatus.textContent = handoffMessage(result);
+      if (handoffStatusTimer !== null) window.clearTimeout(handoffStatusTimer);
+      handoffStatusTimer = window.setTimeout(() => {
+        if (panelRefs) panelRefs.handoffStatus.textContent = '';
+        handoffStatusTimer = null;
+      }, 4000);
+    };
+
     const fillComposer = () => {
-      const target = document.querySelector('form textarea, textarea[data-testid*="prompt" i], textarea[placeholder*="Message ChatGPT" i], div[contenteditable="true"][role="textbox"]') as HTMLTextAreaElement | HTMLDivElement | null;
-      if (!target) return;
-      if (target instanceof HTMLTextAreaElement) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-        setter?.call(target, HANDOFF_PROMPT);
-      } else target.textContent = HANDOFF_PROMPT;
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: HANDOFF_PROMPT }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-      target.focus();
+      showHandoffStatus(prepareHandoff(findComposer(document), HANDOFF_PROMPT));
     };
 
     const makeThresholdSetting = (label: string, key: 'pressureWarning' | 'pressureCritical' | 'historyWarning') => {
@@ -334,6 +346,7 @@ export default defineContentScript({
         makeSection('Conversation signals', [characters.row, pressureRow.row, hidden.row, compaction.row, model.row, measured.row, confirmed.row]),
       );
       const handoff = document.createElement('button'); handoff.type = 'button'; handoff.className = 'cgm-button'; handoff.textContent = 'Prepare handoff'; handoff.addEventListener('click', fillComposer); panel.append(handoff);
+      const handoffStatus = document.createElement('div'); handoffStatus.className = 'cgm-handoff-status'; handoffStatus.setAttribute('aria-live', 'polite'); panel.append(handoffStatus);
       const settingsTitle = document.createElement('div'); settingsTitle.className = 'cgm-section-title'; settingsTitle.textContent = 'Local settings'; panel.append(settingsTitle);
       const settingsNote = document.createElement('small'); settingsNote.textContent = 'Thresholds are your own warnings, not ChatGPT limits.'; panel.append(settingsNote);
       const expandedSetting = document.createElement('label'); expandedSetting.className = 'cgm-setting cgm-switch'; const expandedCheckbox = document.createElement('input'); expandedCheckbox.className = 'cgm-checkbox'; expandedCheckbox.type = 'checkbox'; const track = document.createElement('span'); track.className = 'cgm-switch-track'; expandedSetting.append(document.createTextNode('Open panel by default'), expandedCheckbox, track); panel.append(expandedSetting);
@@ -341,7 +354,7 @@ export default defineContentScript({
       const pressureCritical = makeThresholdSetting('Pressure critical', 'pressureCritical');
       const historyWarning = makeThresholdSetting('History warning', 'historyWarning');
       panel.append(pressureWarning.wrapper, pressureCritical.wrapper, historyWarning.wrapper);
-      panelRefs = { status: status.value, history: historyRow.value, messages: messages.value, nodes: nodes.value, user: user.value, assistant: assistant.value, tools: tools.value, reasoning: reasoning.value, system: system.value, characters: characters.value, pressure: pressureRow.value, hidden: hidden.value, compaction: compaction.value, model: model.value, measured: measured.value, confirmed: confirmed.value, expanded: expandedCheckbox, thresholdInputs: { pressureWarning: pressureWarning.input, pressureCritical: pressureCritical.input, historyWarning: historyWarning.input } };
+      panelRefs = { status: status.value, handoffStatus, history: historyRow.value, messages: messages.value, nodes: nodes.value, user: user.value, assistant: assistant.value, tools: tools.value, reasoning: reasoning.value, system: system.value, characters: characters.value, pressure: pressureRow.value, hidden: hidden.value, compaction: compaction.value, model: model.value, measured: measured.value, confirmed: confirmed.value, expanded: expandedCheckbox, thresholdInputs: { pressureWarning: pressureWarning.input, pressureCritical: pressureCritical.input, historyWarning: historyWarning.input } };
       expandedCheckbox.addEventListener('change', () => { settings.expandedDefault = expandedCheckbox.checked; if (expandedCheckbox.checked) expanded = true; saveSettings(); render(); });
       applyTheme();
     };
