@@ -37,8 +37,8 @@ ChatGPT does not expose a clear conversation-lifespan meter. Long technical conv
 
 The GitHub beta is unsigned and is not yet distributed through AMO. This is a temporary developer/test installation.
 
-1. Open the [v0.1.0 GitHub release](https://github.com/jyu041/chatgpt-meter/releases/tag/v0.1.0).
-2. Download `chatgpt-meter-0.1.0-firefox.zip` and extract it.
+1. Open the [v0.1.1 GitHub release](https://github.com/jyu041/chatgpt-meter/releases/tag/v0.1.1).
+2. Download `chatgpt-meter-0.1.1-firefox.zip` and extract it.
 3. Open `about:debugging#/runtime/this-firefox` in Firefox.
 4. Click **Load Temporary Add-on**.
 5. Select the extracted extension's `manifest.json`.
@@ -47,8 +47,8 @@ Firefox removes temporary extensions when the browser exits. Persistent Firefox 
 
 ### Chrome / Chromium
 
-1. Open the [v0.1.0 GitHub release](https://github.com/jyu041/chatgpt-meter/releases/tag/v0.1.0).
-2. Download `chatgpt-meter-0.1.0-chrome.zip` and extract it.
+1. Open the [v0.1.1 GitHub release](https://github.com/jyu041/chatgpt-meter/releases/tag/v0.1.1).
+2. Download `chatgpt-meter-0.1.1-chrome.zip` and extract it.
 3. Open `chrome://extensions`.
 4. Enable **Developer mode**.
 5. Click **Load unpacked**.

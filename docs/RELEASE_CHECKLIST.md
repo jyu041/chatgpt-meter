@@ -39,12 +39,16 @@
 - [ ] Set repository description and topics
 - [ ] Enable security features
 - [ ] Make repository public only after final scan
-- [ ] Tag `v0.1.0` only after manual validation
+- [ ] Tag `v0.1.1` only after final validation
+- [ ] Create the `v0.1.1` GitHub prerelease with the three tested ZIPs
 
 ## Stores
 
-- [ ] Original icon
-- [ ] Screenshots without private content
+- [x] Original icon exists and is wired into the manifest
+- [x] GitHub screenshot without private content
+- [ ] Additional store screenshots without private content
 - [ ] Privacy-policy URL
 - [ ] AMO source package
-- [ ] Chrome listing disclosures
+- [ ] Chrome listing disclosures (not currently planned; registration requires a paid developer account)
+
+Chromium remains supported through GitHub/manual installation. Firefox AMO submission is the next major store step; no store submission has happened.
