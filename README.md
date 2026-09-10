@@ -63,6 +63,12 @@ As verified in the September 10, 2026 Firefox test, current ChatGPT commonly req
 
 Warning thresholds start unset. They are optional, user-defined warnings and are not ChatGPT limits. Maximum-length detection uses only a debounced bounded alert/live-region scan; it deliberately has no full-conversation text fallback.
 
+`Open panel by default` controls whether the details panel opens when a conversation is loaded or navigated to. It does not enable or disable the independent threshold fields.
+
+## Observed calibration data
+
+On 2026-09-10, a known previously maxed conversation was reopened and measured at approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483. The hard-limit UI was not observed by the extension during this measurement, so this is a retrospective near/at-limit calibration observation, not `limitConfirmed`. One personal observation is insufficient to infer a universal threshold.
+
 ## Privacy rules
 
 - Host scope: `https://chatgpt.com/*` only.

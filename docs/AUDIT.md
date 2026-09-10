@@ -67,6 +67,10 @@ An authenticated Firefox test observed ChatGPT using `GET /backend-api/conversat
 
 The implementation uses message `id` for deduplication and the observed `page_info.has_previous_page` / `start_cursor` fields for backwards pagination. The supplied evidence does not establish whether `include_has_versions=true` makes `messages[]` include alternate regenerated versions or guarantees that it is already the selected branch. Until a sanitized payload confirms those semantics, paginated messages are treated as the endpoint's selected sequence and alternate-version selection is documented as uncertain.
 
+## Observed calibration data
+
+On 2026-09-10, a known previously maxed conversation was reopened and measured at approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483. The extension did not observe the terminal hard-limit UI event, so this remains a retrospective near/at-limit observation and is not `limitConfirmed`. It is personal calibration evidence only; no universal threshold is inferred.
+
 ## Security/privacy rules
 
 1. Host permissions: ChatGPT only.

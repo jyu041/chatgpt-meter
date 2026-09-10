@@ -97,6 +97,8 @@ For the next live payload inspection, capture only structural fields: message ID
 
 Optional structural diagnostics can be enabled for a local tab only with `window.__chatgptMeterDebug__ = true` before the observer initializes. They report format, page counts, cursors, and unique-message counts only; debug mode defaults off.
 
+Retrospective calibration evidence from 2026-09-10: a known previously maxed conversation measured approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483, but the extension did not observe the hard-limit UI event. Treat this as personal near/at-limit evidence, not a confirmed state or global threshold.
+
 ## Do not do
 
 - Do not copy code/constants from unlicensed `SpendinFR/UsageChatgpt`.

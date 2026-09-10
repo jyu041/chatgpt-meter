@@ -133,6 +133,10 @@ The isolated content script stores settings and aggregate limit observations in 
 
 Warning thresholds should initially be configurable raw values. After several personally observed confirmed limits, derive a local calibration curve. Do not ship upstream experimental thresholds as facts.
 
+The local `Open panel by default` preference controls details-panel expansion on conversation load/navigation; each threshold remains independently optional.
+
+One retrospective 2026-09-10 observation of a known previously maxed conversation measured approximately 3.52M historical tokens, 3,348 messages, and raw pressure 2,483 without observing the terminal UI event. It is not a confirmed-limit observation or a universal threshold.
+
 ## Open questions to validate live
 
 - Exact conversation-detail route variants used by normal and Project chats.

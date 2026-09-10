@@ -127,7 +127,9 @@ const STYLE_TEXT = `
   z-index: 2147483645;
   display: none;
   width: min(330px, calc(100vw - 32px));
-  max-height: min(72vh, 620px);
+  top: 12px;
+  bottom: 58px;
+  max-height: none;
   overflow: auto;
   padding: 16px;
   border: 1px solid var(--cgm-border);
@@ -174,6 +176,14 @@ export default defineContentScript({
     let root: HTMLButtonElement | null = null;
     let panel: HTMLDivElement | null = null;
     let limitCheckTimer: number | null = null;
+    let badgeRefs: { historyLabel: HTMLSpanElement; history: HTMLSpanElement; separator: HTMLSpanElement; pressureLabel: HTMLSpanElement; pressure: HTMLSpanElement } | null = null;
+    let panelRefs: {
+      status: HTMLSpanElement; history: HTMLElement; messages: HTMLSpanElement; nodes: HTMLSpanElement;
+      user: HTMLSpanElement; assistant: HTMLSpanElement; tools: HTMLSpanElement; reasoning: HTMLSpanElement; system: HTMLSpanElement;
+      characters: HTMLSpanElement; pressure: HTMLSpanElement; hidden: HTMLSpanElement; compaction: HTMLSpanElement;
+      model: HTMLSpanElement; measured: HTMLSpanElement; confirmed: HTMLSpanElement;
+      expanded: HTMLInputElement; thresholdInputs: Record<'pressureWarning' | 'pressureCritical' | 'historyWarning', HTMLInputElement>;
+    } | null = null;
 
     const saveSettings = () => void browser.storage.local.set({ [STORAGE_KEY]: settings });
     const recordLimit = async () => {
@@ -220,12 +230,12 @@ export default defineContentScript({
       (document.head || document.documentElement).appendChild(style);
     };
 
-    const makeText = (label: string, value: string) => {
+    const makeText = (label: string) => {
       const row = document.createElement('div');
       row.className = 'cgm-row';
       const key = document.createElement('span'); key.className = 'cgm-label'; key.textContent = label;
-      const val = document.createElement('span'); val.className = 'cgm-value'; val.textContent = value;
-      row.append(key, val); return row;
+      const val = document.createElement('span'); val.className = 'cgm-value';
+      row.append(key, val); return { row, value: val };
     };
 
     const makeSection = (title: string, rows: HTMLElement[]) => {
@@ -234,29 +244,36 @@ export default defineContentScript({
       section.append(heading, ...rows); return section;
     };
 
-    const makePrimary = (label: string, value: string) => {
+    const makePrimary = (label: string) => {
       const block = document.createElement('div');
       const caption = document.createElement('div'); caption.className = 'cgm-section-title'; caption.textContent = label;
-      const amount = document.createElement('div'); amount.className = 'cgm-primary-value'; amount.textContent = value;
-      block.append(caption, amount); return block;
+      const amount = document.createElement('div'); amount.className = 'cgm-primary-value';
+      block.append(caption, amount); return { block, value: amount };
     };
 
-    const makeStatusRow = (label: string, value: string) => {
+    const makeStatusRow = (label: string) => {
       const row = document.createElement('div'); row.className = 'cgm-row';
       const key = document.createElement('span'); key.className = 'cgm-label'; key.textContent = label;
-      const status = document.createElement('span'); status.className = 'cgm-status'; status.textContent = value;
-      row.append(key, status); return row;
+      const status = document.createElement('span'); status.className = 'cgm-status';
+      row.append(key, status); return { row, value: status };
     };
 
     const setBadge = (historyValue: string, pressureValue: string | null, loading = false) => {
-      if (!root) return;
-      root.replaceChildren();
-      const historyLabel = document.createElement('span'); historyLabel.className = 'cgm-pill-label'; historyLabel.textContent = 'History ';
-      const history = document.createElement('span'); history.className = 'cgm-pill-value'; history.textContent = historyValue;
-      const separator = document.createElement('span'); separator.className = 'cgm-pill-separator'; separator.textContent = ' · ';
-      const pressureLabel = document.createElement('span'); pressureLabel.className = 'cgm-pill-label'; pressureLabel.textContent = loading ? 'Loading history...' : 'Pressure ';
-      root.append(historyLabel, history, separator, pressureLabel);
-      if (pressureValue) { const pressure = document.createElement('span'); pressure.className = 'cgm-pill-value'; pressure.textContent = pressureValue; root.append(pressure); }
+      if (!badgeRefs) return;
+      badgeRefs.historyLabel.textContent = 'History ';
+      badgeRefs.history.textContent = historyValue;
+      badgeRefs.separator.textContent = ' · ';
+      badgeRefs.pressureLabel.textContent = loading ? 'Loading history...' : 'Pressure ';
+      badgeRefs.pressure.textContent = pressureValue ?? '';
+    };
+
+    const setBadgeMessage = (message: string) => {
+      if (!badgeRefs) return;
+      badgeRefs.historyLabel.textContent = message;
+      badgeRefs.history.textContent = '';
+      badgeRefs.separator.textContent = '';
+      badgeRefs.pressureLabel.textContent = '';
+      badgeRefs.pressure.textContent = '';
     };
 
     const fillComposer = () => {
@@ -271,6 +288,13 @@ export default defineContentScript({
       target.focus();
     };
 
+    const makeThresholdSetting = (label: string, key: 'pressureWarning' | 'pressureCritical' | 'historyWarning') => {
+      const wrapper = document.createElement('label'); wrapper.className = 'cgm-setting'; wrapper.append(document.createTextNode(label));
+      const input = document.createElement('input'); input.className = 'cgm-input'; input.type = 'number'; input.min = '0'; input.step = '1'; input.placeholder = 'off';
+      input.addEventListener('change', () => { const value = Number(input.value); if (!input.value.trim()) settings[key] = null; else if (Number.isFinite(value) && value >= 0) settings[key] = Math.floor(value); else return; saveSettings(); render(); });
+      wrapper.append(input); return { wrapper, input };
+    };
+
     const ensureRoot = () => {
       if (root?.isConnected && panel?.isConnected) return;
       if (!document.body) return;
@@ -279,8 +303,46 @@ export default defineContentScript({
       root.title = 'Historical conversation size, not OpenAI internal context usage';
       root.setAttribute('aria-label', root.title);
       root.addEventListener('click', () => { expanded = !expanded; render(); });
+      const historyLabel = document.createElement('span'); historyLabel.className = 'cgm-pill-label';
+      const badgeHistory = document.createElement('span'); badgeHistory.className = 'cgm-pill-value';
+      const separator = document.createElement('span'); separator.className = 'cgm-pill-separator';
+      const pressureLabel = document.createElement('span'); pressureLabel.className = 'cgm-pill-label';
+      const badgePressure = document.createElement('span'); badgePressure.className = 'cgm-pill-value';
+      root.append(historyLabel, badgeHistory, separator, pressureLabel, badgePressure);
+      badgeRefs = { historyLabel, history: badgeHistory, separator, pressureLabel, pressure: badgePressure };
       panel = document.createElement('div'); panel.className = 'cgm-panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'ChatGPT Meter details');
       document.body.append(root, panel);
+      const historyRow = makePrimary('Estimated historical tokens');
+      const messages = makeText('Messages');
+      const nodes = makeText('Nodes');
+      const status = makeStatusRow('Status');
+      const user = makeText('User');
+      const assistant = makeText('Assistant');
+      const tools = makeText('Tools');
+      const reasoning = makeText('Reasoning');
+      const system = makeText('System / other');
+      const characters = makeText('Characters');
+      const pressureRow = makeText('Pressure');
+      const hidden = makeText('Hidden messages');
+      const compaction = makeText('Compaction');
+      const model = makeText('Model');
+      const measured = makeText('Measured');
+      const confirmed = makeText('Hard limit confirmed');
+      panel.append(
+        makeSection('Conversation history', [historyRow.block, messages.row, nodes.row, status.row]),
+        makeSection('Breakdown', [user.row, assistant.row, tools.row, reasoning.row, system.row]),
+        makeSection('Conversation signals', [characters.row, pressureRow.row, hidden.row, compaction.row, model.row, measured.row, confirmed.row]),
+      );
+      const handoff = document.createElement('button'); handoff.type = 'button'; handoff.className = 'cgm-button'; handoff.textContent = 'Prepare handoff'; handoff.addEventListener('click', fillComposer); panel.append(handoff);
+      const settingsTitle = document.createElement('div'); settingsTitle.className = 'cgm-section-title'; settingsTitle.textContent = 'Local settings'; panel.append(settingsTitle);
+      const settingsNote = document.createElement('small'); settingsNote.textContent = 'Thresholds are your own warnings, not ChatGPT limits.'; panel.append(settingsNote);
+      const expandedSetting = document.createElement('label'); expandedSetting.className = 'cgm-setting cgm-switch'; const expandedCheckbox = document.createElement('input'); expandedCheckbox.className = 'cgm-checkbox'; expandedCheckbox.type = 'checkbox'; const track = document.createElement('span'); track.className = 'cgm-switch-track'; expandedSetting.append(document.createTextNode('Open panel by default'), expandedCheckbox, track); panel.append(expandedSetting);
+      const pressureWarning = makeThresholdSetting('Pressure warning', 'pressureWarning');
+      const pressureCritical = makeThresholdSetting('Pressure critical', 'pressureCritical');
+      const historyWarning = makeThresholdSetting('History warning', 'historyWarning');
+      panel.append(pressureWarning.wrapper, pressureCritical.wrapper, historyWarning.wrapper);
+      panelRefs = { status: status.value, history: historyRow.value, messages: messages.value, nodes: nodes.value, user: user.value, assistant: assistant.value, tools: tools.value, reasoning: reasoning.value, system: system.value, characters: characters.value, pressure: pressureRow.value, hidden: hidden.value, compaction: compaction.value, model: model.value, measured: measured.value, confirmed: confirmed.value, expanded: expandedCheckbox, thresholdInputs: { pressureWarning: pressureWarning.input, pressureCritical: pressureCritical.input, historyWarning: historyWarning.input } };
+      expandedCheckbox.addEventListener('change', () => { settings.expandedDefault = expandedCheckbox.checked; if (expandedCheckbox.checked) expanded = true; saveSettings(); render(); });
       applyTheme();
     };
 
@@ -294,29 +356,33 @@ export default defineContentScript({
       const warning = thresholdReached(pressure, settings.pressureWarning) || thresholdReached(history, settings.historyWarning);
       root.classList.toggle('cgm-critical', critical);
       root.classList.toggle('cgm-warning', !critical && warning);
-      if (limitConfirmed) root.textContent = 'Limit confirmed';
+      if (limitConfirmed) setBadgeMessage('Limit confirmed');
       else if (metrics?.measurementState === 'partial') { setBadge(`~${compactNumber(metrics.historicalTokensEstimate)}+`, null, true); }
-      else if (metrics?.measurementState === 'unavailable') root.textContent = 'Meter unavailable';
+      else if (metrics?.measurementState === 'unavailable') setBadgeMessage('Meter unavailable');
       else if (metrics) { setBadge(`~${compactNumber(metrics.historicalTokensEstimate)}`, compactNumber(metrics.structuralPressureRaw)); }
-      else root.textContent = currentConversationId() ? 'Meter: reading...' : 'Meter: new chat';
-      if (!metrics) { panel.replaceChildren(makeText('Status', currentConversationId() ? 'Reading...' : 'New chat')); return; }
-      const status = metrics.measurementState === 'complete' ? 'Complete' : `${metrics.measurementState} (${metrics.pagesLoaded} pages)`;
-      panel.replaceChildren(
-        makeSection('Conversation history', [makePrimary('Estimated historical tokens', `~${metrics.historicalTokensEstimate.toLocaleString()}${metrics.hasMoreHistory ? '+' : ''}`), makeText('Messages', metrics.activeBranchMessages.toLocaleString()), makeText('Nodes', metrics.activeBranchNodes.toLocaleString()), makeStatusRow('Status', status)]),
-        makeSection('Breakdown', [makeText('User', metrics.roleTokens.user.toLocaleString()), makeText('Assistant', metrics.roleTokens.assistant.toLocaleString()), makeText('Tools', metrics.roleTokens.tool.toLocaleString()), makeText('Reasoning', metrics.roleTokens.reasoning.toLocaleString()), makeText('System / other', `${metrics.roleTokens.system.toLocaleString()} / ${metrics.roleTokens.other.toLocaleString()}`)]),
-        makeSection('Conversation signals', [makeText('Characters', metrics.historicalCharacters.toLocaleString()), makeText('Pressure', `${metrics.structuralPressureRaw} (experimental)`), makeText('Hidden messages', String(metrics.hiddenMessages)), makeText('Compaction', `${metrics.compactionSignals} (${metrics.compactionSignalLevel})`), makeText('Model', metrics.modelSlug ?? 'unknown'), makeText('Measured', new Date(metrics.measuredAt).toLocaleString()), makeText('Hard limit confirmed', limitConfirmed ? 'yes' : 'not observed')]),
-      );
-      const handoff = document.createElement('button'); handoff.type = 'button'; handoff.className = 'cgm-button'; handoff.textContent = 'Prepare handoff'; handoff.addEventListener('click', fillComposer); panel.append(handoff);
-      const settingsTitle = document.createElement('div'); settingsTitle.className = 'cgm-section-title'; settingsTitle.textContent = 'Local settings'; panel.append(settingsTitle);
-      const settingsNote = document.createElement('small'); settingsNote.textContent = 'Thresholds are your own warnings, not ChatGPT limits.'; panel.append(settingsNote);
-      const expandedSetting = document.createElement('label'); expandedSetting.className = 'cgm-setting cgm-switch'; const expandedCheckbox = document.createElement('input'); expandedCheckbox.className = 'cgm-checkbox'; expandedCheckbox.type = 'checkbox'; expandedCheckbox.checked = settings.expandedDefault; expandedCheckbox.onchange = () => { settings.expandedDefault = expandedCheckbox.checked; saveSettings(); }; const track = document.createElement('span'); track.className = 'cgm-switch-track'; expandedSetting.append(document.createTextNode('Expanded by default'), expandedCheckbox, track); panel.append(expandedSetting);
-      const numberSetting = (label: string, key: 'pressureWarning' | 'pressureCritical' | 'historyWarning') => {
-        const wrapper = document.createElement('label'); wrapper.className = 'cgm-setting'; wrapper.append(document.createTextNode(label));
-        const input = document.createElement('input'); input.className = 'cgm-input'; input.type = 'number'; input.min = '0'; input.step = '1'; input.placeholder = 'off'; input.value = settings[key] === null ? '' : String(settings[key]);
-        input.onchange = () => { const value = Number(input.value); if (!input.value.trim()) settings[key] = null; else if (Number.isFinite(value) && value >= 0) settings[key] = Math.floor(value); else return; saveSettings(); render(); };
-        wrapper.append(input); return wrapper;
-      };
-      panel.append(numberSetting('Pressure warning', 'pressureWarning'), numberSetting('Pressure critical', 'pressureCritical'), numberSetting('History warning', 'historyWarning'));
+      else setBadgeMessage(currentConversationId() ? 'Meter: reading...' : 'Meter: new chat');
+      if (!panelRefs) return;
+      if (!metrics) { panelRefs.status.textContent = currentConversationId() ? 'Reading...' : 'New chat'; return; }
+      panelRefs.status.textContent = metrics.measurementState === 'complete' ? 'Complete' : `${metrics.measurementState} (${metrics.pagesLoaded} pages)`;
+      panelRefs.history.textContent = `~${metrics.historicalTokensEstimate.toLocaleString()}${metrics.hasMoreHistory ? '+' : ''}`;
+      panelRefs.messages.textContent = metrics.activeBranchMessages.toLocaleString();
+      panelRefs.nodes.textContent = metrics.activeBranchNodes.toLocaleString();
+      panelRefs.user.textContent = metrics.roleTokens.user.toLocaleString();
+      panelRefs.assistant.textContent = metrics.roleTokens.assistant.toLocaleString();
+      panelRefs.tools.textContent = metrics.roleTokens.tool.toLocaleString();
+      panelRefs.reasoning.textContent = metrics.roleTokens.reasoning.toLocaleString();
+      panelRefs.system.textContent = `${metrics.roleTokens.system.toLocaleString()} / ${metrics.roleTokens.other.toLocaleString()}`;
+      panelRefs.characters.textContent = metrics.historicalCharacters.toLocaleString();
+      panelRefs.pressure.textContent = `${metrics.structuralPressureRaw} (experimental)`;
+      panelRefs.hidden.textContent = String(metrics.hiddenMessages);
+      panelRefs.compaction.textContent = `${metrics.compactionSignals} (${metrics.compactionSignalLevel})`;
+      panelRefs.model.textContent = metrics.modelSlug ?? 'unknown';
+      panelRefs.measured.textContent = new Date(metrics.measuredAt).toLocaleString();
+      panelRefs.confirmed.textContent = limitConfirmed ? 'yes' : 'not observed';
+      panelRefs.expanded.checked = settings.expandedDefault;
+      for (const [key, input] of Object.entries(panelRefs.thresholdInputs) as Array<[keyof Settings, HTMLInputElement]>) {
+        if (document.activeElement !== input) input.value = settings[key] === null ? '' : String(settings[key]);
+      }
     };
 
     const scheduleLimitCheck = () => {
