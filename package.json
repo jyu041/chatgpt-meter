@@ -19,7 +19,7 @@
     "zip:chrome": "wxt zip -b chrome --mv3"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.4",
     "wxt": "^0.21.4",
     "@types/node": "^22.0.0"
