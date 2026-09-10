@@ -3,7 +3,7 @@
 An unofficial browser extension that estimates the observable historical size of the current ChatGPT conversation and shows an experimental structural pressure signal.
 
 [![CI](https://github.com/jyu041/chatgpt-meter/actions/workflows/ci.yml/badge.svg)](https://github.com/jyu041/chatgpt-meter/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/jyu041/chatgpt-meter?include_prereleases=true&label=release)](https://github.com/jyu041/chatgpt-meter/releases/tag/v0.1.0)
+[![Release](https://img.shields.io/github/v/tag/jyu041/chatgpt-meter?label=release&sort=semver)](https://github.com/jyu041/chatgpt-meter/releases)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Firefox 128+](https://img.shields.io/badge/Firefox-128%2B-orange?logo=firefox-browser)](https://www.mozilla.org/firefox/)
 
