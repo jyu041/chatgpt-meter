@@ -30,7 +30,7 @@ ChatGPT MAIN world
 isolated content script
   validate schema + route conversation ID
   render small badge
-  detect visible confirmed-limit message
+  detect visible confirmed-limit message (debounced likely-alert scan, throttled full fallback)
 ```
 
 ### Live refresh
@@ -61,6 +61,8 @@ This is deliberately provisional. OpenCode must validate it against current Chat
 - Displays a minimal persistent badge.
 - Detects visible maximum-length wording separately.
 - Does not scrape conversation messages for measurement.
+
+Limit detection first checks alert/live-region/toast-like elements after a 300 ms mutation debounce. A full body-text fallback is allowed at most once every 1.5 seconds while mutations continue; it is lifecycle/error detection only, never conversation measurement.
 
 ### `lib/analyze.ts`
 

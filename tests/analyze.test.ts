@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeConversation, estimateTokens } from '../lib/analyze';
+import { analyzeConversation, estimateTokens, withConversationId } from '../lib/analyze';
+import { upsertLimitObservation, type LimitObservation } from '../lib/calibration';
 import { conversationDetailId, conversationIdFromPath } from '../lib/routes';
+import { thresholdReached } from '../lib/settings';
 
 function node(parent: string | null, role?: string, text?: string, metadata: Record<string, unknown> = {}) {
   return {
@@ -169,6 +171,26 @@ describe('analyzeConversation', () => {
   it('uses the most specific model slug seen on the active branch', () => {
     const data = { id: 'models', default_model_slug: 'old-model', current_node: 'x', mapping: { root: node(null), x: node('root', 'assistant', 'answer', { resolved_model_slug: 'new-model' }) } };
     expect(analyzeConversation(data)?.modelSlug).toBe('new-model');
+  });
+
+  it('uses the endpoint ID when the graph omits its conversation ID', () => {
+    const metrics = analyzeConversation({ current_node: 'x', mapping: { root: node(null), x: node('root', 'user', 'hello') } });
+    expect(metrics).not.toBeNull();
+    expect(withConversationId(metrics!, 'endpoint-id')?.conversationId).toBe('endpoint-id');
+    expect(withConversationId({ ...metrics!, conversationId: 'payload-id' }, 'endpoint-id')).toBeNull();
+  });
+});
+
+describe('local calibration and thresholds', () => {
+  const observation = (id: string, pressure: number): LimitObservation => ({ conversationId: id, measuredAt: `${id}-${pressure}`, historicalTokensEstimate: 10, structuralPressureRaw: pressure, activeBranchMessages: 1 });
+
+  it('replaces an existing observation for the same conversation', () => {
+    expect(upsertLimitObservation([observation('same', 1)], observation('same', 2))).toEqual([observation('same', 2)]);
+  });
+
+  it('keeps disabled thresholds neutral', () => {
+    expect(thresholdReached(1000, null)).toBe(false);
+    expect(thresholdReached(1000, 1000)).toBe(true);
   });
 });
 

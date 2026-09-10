@@ -58,6 +58,8 @@ npm run build:chrome
 
 The observer recognizes `/backend-api/conversation/{id}`, `/backend-api/conversations/{id}`, and their `/f/` variants. Project chats are selected by the normal `/c/{id}` route. ChatGPT endpoint behavior can change, so live validation remains necessary.
 
+Warning thresholds start unset. They are optional, user-defined warnings and are not ChatGPT limits. Maximum-length detection uses a debounced alert/live-region scan with a throttled full-text fallback; it does not count messages from the DOM.
+
 ## Privacy rules
 
 - Host scope: `https://chatgpt.com/*` only.

@@ -1,15 +1,16 @@
 import { METRICS_EVENT, METRICS_REQUEST_EVENT, type ConversationMetrics } from '../lib/analyze';
+import { upsertLimitObservation, type LimitObservation } from '../lib/calibration';
 import { conversationIdFromPath } from '../lib/routes';
+import { thresholdReached } from '../lib/settings';
 
 const ROOT_ID = 'chatgpt-meter-root';
 const STORAGE_KEY = 'chatgpt-meter:settings';
 const LIMITS_KEY = 'chatgpt-meter:limit-observations';
 const DEFAULTS = {
-  showMeter: true,
   expandedDefault: false,
-  pressureWarning: 500,
-  pressureCritical: 1000,
-  historyWarning: 100000,
+  pressureWarning: null as number | null,
+  pressureCritical: null as number | null,
+  historyWarning: null as number | null,
 };
 type Settings = typeof DEFAULTS;
 
@@ -34,19 +35,25 @@ function isMetrics(value: unknown): value is ConversationMetrics {
   return data.schemaVersion === 1 && typeof data.conversationId === 'string' && typeof data.historicalTokensEstimate === 'number' && typeof data.structuralPressureRaw === 'number' && typeof data.activeBranchMessages === 'number' && typeof data.historicalCharacters === 'number' && typeof data.compactionSignalLevel === 'string';
 }
 
-function visibleMaximumLengthReached(): boolean {
-  const text = document.body?.innerText ?? '';
+function containsMaximumLengthNotice(text: string): boolean {
   return MAX_LENGTH_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function visibleMaximumLengthReached(): boolean {
+  const likely = document.querySelectorAll('[role="alert"], [aria-live], [data-testid*="toast" i]');
+  let likelyText = '';
+  for (const element of Array.from(likely)) likelyText += ` ${element.textContent ?? ''}`;
+  return containsMaximumLengthNotice(likelyText);
 }
 
 const HANDOFF_PROMPT = `Create a concise handoff for this project and current session. Do not guess or omit exact identifiers.
 
-Write these files in fenced markdown blocks:
+When artifact/file generation is available, create actual downloadable Markdown files (not just fenced text):
 - PROJECT_STATE.md: current objective, exact identifiers, key decisions, completed work, unresolved issues, and constraints.
 - SESSION_HANDOFF.md: what is in progress, next steps, things not to repeat, and precise verification commands.
 - Add EVIDENCE_LOG.md only when there are concrete observations, test results, or links worth preserving.
 
-Preserve exact names, paths, versions, errors, and decisions. Separate facts from assumptions. Keep the files actionable and concise.`;
+Preserve exact names, paths, versions, errors, and decisions. Optimize for information density. Distinguish VERIFIED FACTS, INFERENCES, and OPEN QUESTIONS. Include a START_HERE section. Do not automatically omit older decisions that still constrain the project. Keep the files actionable and concise.`;
 
 export default defineContentScript({
   matches: ['https://chatgpt.com/*'],
@@ -59,15 +66,17 @@ export default defineContentScript({
     let lastPath = location.pathname;
     let root: HTMLButtonElement | null = null;
     let panel: HTMLDivElement | null = null;
+    let limitCheckTimer: number | null = null;
+    let lastFullLimitCheck = 0;
 
     const saveSettings = () => void browser.storage.local.set({ [STORAGE_KEY]: settings });
     const recordLimit = async () => {
       const id = currentConversationId();
       if (!id || !metrics) return;
       const stored = await browser.storage.local.get(LIMITS_KEY);
-      const observations = Array.isArray(stored[LIMITS_KEY]) ? stored[LIMITS_KEY] : [];
-      observations.push({ conversationId: id, measuredAt: metrics.measuredAt, historicalTokensEstimate: metrics.historicalTokensEstimate, structuralPressureRaw: metrics.structuralPressureRaw, activeBranchMessages: metrics.activeBranchMessages });
-      await browser.storage.local.set({ [LIMITS_KEY]: observations.slice(-100) });
+      const observations = Array.isArray(stored[LIMITS_KEY]) ? stored[LIMITS_KEY] as LimitObservation[] : [];
+      const observation: LimitObservation = { conversationId: id, measuredAt: metrics.measuredAt, historicalTokensEstimate: metrics.historicalTokensEstimate, structuralPressureRaw: metrics.structuralPressureRaw, activeBranchMessages: metrics.activeBranchMessages };
+      await browser.storage.local.set({ [LIMITS_KEY]: upsertLimitObservation(observations, observation) });
     };
     const loadLimitState = async () => {
       const id = currentConversationId();
@@ -87,7 +96,7 @@ export default defineContentScript({
     };
 
     const fillComposer = () => {
-      const target = document.querySelector('textarea[placeholder*="Message" i], div[contenteditable="true"]') as HTMLTextAreaElement | HTMLDivElement | null;
+      const target = document.querySelector('form textarea, textarea[data-testid*="prompt" i], textarea[placeholder*="Message ChatGPT" i], div[contenteditable="true"][role="textbox"]') as HTMLTextAreaElement | HTMLDivElement | null;
       if (!target) return;
       if (target instanceof HTMLTextAreaElement) {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
@@ -112,11 +121,12 @@ export default defineContentScript({
 
     const render = () => {
       ensureRoot(); if (!root || !panel) return;
-      root.style.display = settings.showMeter ? 'block' : 'none';
-      panel.style.display = settings.showMeter && expanded ? 'block' : 'none';
+      panel.style.display = expanded ? 'block' : 'none';
       const pressure = metrics?.structuralPressureRaw ?? 0;
       const history = metrics?.historicalTokensEstimate ?? 0;
-      root.style.borderColor = pressure >= settings.pressureCritical || history >= settings.historyWarning * 1.5 ? '#c33' : pressure >= settings.pressureWarning || history >= settings.historyWarning ? '#c80' : 'color-mix(in srgb,currentColor 18%,transparent)';
+      const critical = thresholdReached(pressure, settings.pressureCritical);
+      const warning = thresholdReached(pressure, settings.pressureWarning) || thresholdReached(history, settings.historyWarning);
+      root.style.borderColor = critical ? '#c33' : warning ? '#c80' : 'color-mix(in srgb,currentColor 18%,transparent)';
       root.textContent = limitConfirmed ? 'Limit confirmed' : metrics ? `History ~${compactNumber(metrics.historicalTokensEstimate)} · Pressure ${compactNumber(metrics.structuralPressureRaw)}` : currentConversationId() ? 'Meter: reading...' : 'Meter: new chat';
       if (!metrics) { panel.replaceChildren(makeText('Status', currentConversationId() ? 'Reading...' : 'New chat')); return; }
       panel.replaceChildren(
@@ -125,18 +135,40 @@ export default defineContentScript({
       );
       const handoff = document.createElement('button'); handoff.type = 'button'; handoff.textContent = 'Prepare handoff'; handoff.style.cssText = 'margin-top:8px;width:100%;padding:6px;cursor:pointer'; handoff.addEventListener('click', fillComposer); panel.append(handoff);
       const settingsTitle = document.createElement('div'); settingsTitle.textContent = 'Local settings'; settingsTitle.style.cssText = 'margin-top:12px;font-weight:700'; panel.append(settingsTitle);
-      const show = document.createElement('label'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = settings.showMeter; checkbox.onchange = () => { settings.showMeter = checkbox.checked; saveSettings(); render(); }; show.append(checkbox, ' Show meter'); panel.append(show);
+      const settingsNote = document.createElement('small'); settingsNote.textContent = 'Thresholds are your own warnings, not ChatGPT limits.'; panel.append(settingsNote);
       const expandedSetting = document.createElement('label'); const expandedCheckbox = document.createElement('input'); expandedCheckbox.type = 'checkbox'; expandedCheckbox.checked = settings.expandedDefault; expandedCheckbox.onchange = () => { settings.expandedDefault = expandedCheckbox.checked; saveSettings(); }; expandedSetting.append(expandedCheckbox, ' Expanded by default'); panel.append(expandedSetting);
       const numberSetting = (label: string, key: 'pressureWarning' | 'pressureCritical' | 'historyWarning') => {
         const wrapper = document.createElement('label'); wrapper.style.cssText = 'display:flex;justify-content:space-between;gap:8px;padding:2px 0'; wrapper.append(label);
-        const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.step = '1'; input.value = String(settings[key]); input.style.width = '90px';
-        input.onchange = () => { const value = Number(input.value); if (Number.isFinite(value) && value >= 0) { settings[key] = Math.floor(value); saveSettings(); render(); } };
+        const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.step = '1'; input.placeholder = 'off'; input.value = settings[key] === null ? '' : String(settings[key]); input.style.width = '90px';
+        input.onchange = () => { const value = Number(input.value); if (!input.value.trim()) settings[key] = null; else if (Number.isFinite(value) && value >= 0) settings[key] = Math.floor(value); else return; saveSettings(); render(); };
         wrapper.append(input); return wrapper;
       };
       panel.append(numberSetting('Pressure warning', 'pressureWarning'), numberSetting('Pressure critical', 'pressureCritical'), numberSetting('History warning', 'historyWarning'));
     };
 
-    const resetForNavigation = () => { metrics = null; limitConfirmed = false; expanded = settings.expandedDefault; render(); void loadLimitState(); window.dispatchEvent(new CustomEvent(METRICS_REQUEST_EVENT)); };
+    const scheduleLimitCheck = () => {
+      if (limitConfirmed || limitCheckTimer !== null) return;
+      limitCheckTimer = window.setTimeout(() => {
+        limitCheckTimer = null;
+        if (visibleMaximumLengthReached()) {
+          limitConfirmed = true;
+          void recordLimit();
+          render();
+          return;
+        }
+        const now = Date.now();
+        if (now - lastFullLimitCheck >= 1500) {
+          lastFullLimitCheck = now;
+          if (containsMaximumLengthNotice(document.body?.innerText ?? '')) {
+            limitConfirmed = true;
+            void recordLimit();
+            render();
+            return;
+          }
+        }
+      }, 300);
+    };
+    const resetForNavigation = () => { metrics = null; limitConfirmed = false; expanded = settings.expandedDefault; lastFullLimitCheck = 0; render(); void loadLimitState(); window.dispatchEvent(new CustomEvent(METRICS_REQUEST_EVENT)); scheduleLimitCheck(); };
     window.addEventListener(METRICS_EVENT, (event) => {
       if (!(event instanceof CustomEvent) || typeof event.detail !== 'string') return;
       try { const parsed: unknown = JSON.parse(event.detail); const routeId = currentConversationId(); if (!isMetrics(parsed) || !routeId || parsed.conversationId !== routeId) return; metrics = parsed; render(); } catch { /* malformed bridge data is ignored */ }
@@ -144,10 +176,10 @@ export default defineContentScript({
     const observer = new MutationObserver(() => {
       const nextPath = location.pathname;
       if (nextPath !== lastPath) { lastPath = nextPath; resetForNavigation(); }
-      if (!limitConfirmed && visibleMaximumLengthReached()) { limitConfirmed = true; void recordLimit(); render(); }
+      scheduleLimitCheck();
       if (!root?.isConnected) render();
     });
-    const start = async () => { const stored = await browser.storage.local.get(STORAGE_KEY); if (stored[STORAGE_KEY] && typeof stored[STORAGE_KEY] === 'object') settings = { ...DEFAULTS, ...(stored[STORAGE_KEY] as Partial<Settings>) }; expanded = settings.expandedDefault; render(); void loadLimitState(); if (document.body) observer.observe(document.body, { childList: true, subtree: true }); if (!limitConfirmed && visibleMaximumLengthReached()) { limitConfirmed = true; void recordLimit(); render(); } window.dispatchEvent(new CustomEvent(METRICS_REQUEST_EVENT)); };
+    const start = async () => { const stored = await browser.storage.local.get(STORAGE_KEY); if (stored[STORAGE_KEY] && typeof stored[STORAGE_KEY] === 'object') settings = { ...DEFAULTS, ...(stored[STORAGE_KEY] as Partial<Settings>) }; expanded = settings.expandedDefault; render(); void loadLimitState(); if (document.body) observer.observe(document.body, { childList: true, subtree: true }); scheduleLimitCheck(); window.dispatchEvent(new CustomEvent(METRICS_REQUEST_EVENT)); };
     if (document.body) void start(); else document.addEventListener('DOMContentLoaded', () => void start(), { once: true });
   },
 });

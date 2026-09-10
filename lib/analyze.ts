@@ -158,6 +158,14 @@ function explicitCompactionSignalCount(contentType: string, metadata: UnknownRec
   return count;
 }
 
+export function withConversationId(
+  metrics: ConversationMetrics,
+  expectedId: string,
+): ConversationMetrics | null {
+  if (metrics.conversationId && metrics.conversationId !== expectedId) return null;
+  return metrics.conversationId ? metrics : { ...metrics, conversationId: expectedId };
+}
+
 function compactionSignalLevel(
   count: number,
   branch: UnknownRecord[],

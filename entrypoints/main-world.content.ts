@@ -2,6 +2,7 @@ import {
   analyzeConversation,
   METRICS_EVENT,
   METRICS_REQUEST_EVENT,
+  withConversationId,
 } from '../lib/analyze';
 import { conversationDetailId, conversationIdFromPath } from '../lib/routes';
 
@@ -22,9 +23,9 @@ export default defineContentScript({
     let refreshTimer: number | null = null;
 
     const publish = (data: unknown, expectedId: string | null = null) => {
-      const metrics = analyzeConversation(data);
+      const analyzed = analyzeConversation(data);
+      const metrics = expectedId && analyzed ? withConversationId(analyzed, expectedId) : analyzed;
       if (!metrics) return;
-      if (expectedId && metrics.conversationId && expectedId !== metrics.conversationId) return;
       lastMetricsJson = JSON.stringify(metrics);
       window.dispatchEvent(new CustomEvent(METRICS_EVENT, { detail: lastMetricsJson }));
     };
@@ -94,7 +95,7 @@ export default defineContentScript({
         if (isConversationDetail && method === 'GET') {
           void response.clone().json().then((data: unknown) => {
             const currentRoute = conversationIdFromPath(location.pathname);
-            if (currentRoute && requestConversationId && currentRoute !== requestConversationId) return;
+            if (!currentRoute || !requestConversationId || currentRoute !== requestConversationId) return;
             lastConversationRequest = request?.clone() ?? null;
             lastConversationId = requestConversationId;
             publish(data, requestConversationId);
